@@ -1,15 +1,34 @@
-' åˆ›å»ºæ¡Œé¢å¿«æ·æ–¹å¼ï¼ˆè‹¥ COM è¢«ç­–ç•¥æ‹¦æˆªåˆ™å¤±è´¥ï¼‰
+' ´´½¨×ÀÃæ¿ì½İ·½Ê½¡£COM ±»°²È«²ßÂÔÀ¹½ØÊ±»áÊ§°Ü¡£
+' ÓÃ·¨£ºcscript //nologo tools\mklnk.vbs <Ä¿±êexeÂ·¾¶> [¿ì½İ·½Ê½Ãû×Ö]
+'
+' Ä¿±êÂ·¾¶±ØĞëÓÉµ÷ÓÃ·½¸ø³ö¡ª¡ªĞ´ËÀÔÚ½Å±¾Àï»á°Ñ×÷ÕßµÄ±¾»úÄ¿Â¼½á¹¹´ø½ø²Ö¿â¡£
 Option Explicit
-Dim sh, fso, lnk, desktop
+Dim args, exe, nm
+Set args = WScript.Arguments
+If args.Count < 1 Then
+  WScript.Echo "ÓÃ·¨: cscript //nologo mklnk.vbs <Ä¿±êexeÂ·¾¶> [¿ì½İ·½Ê½Ãû×Ö]"
+  WScript.Quit 1
+End If
+exe = args(0)
+nm = "ModelMux"
+If args.Count >= 2 Then nm = args(1)
+
+Dim sh, fso, lnk, desktop, sc, dir, ico
 Set fso = CreateObject("Scripting.FileSystemObject")
+If Not fso.FileExists(exe) Then
+  WScript.Echo "Ä¿±ê²»´æÔÚ: " & exe
+  WScript.Quit 1
+End If
 Set sh = CreateObject("WScript.Shell")
 desktop = sh.SpecialFolders("Desktop")
-lnk = desktop & "\WorkBuddy2API.lnk"
-Dim sc
+lnk = desktop & "\" & nm & ".lnk"
+dir = fso.GetParentFolderName(exe)
 Set sc = sh.CreateShortcut(lnk)
-sc.TargetPath = "D:\AiWork\WorkBuddy\workbuddy-desktop\WorkBuddy2API.exe"
-sc.WorkingDirectory = "D:\AiWork\WorkBuddy\workbuddy-desktop"
-sc.IconLocation = "D:\AiWork\WorkBuddy\workbuddy-desktop\app.ico"
-sc.Description = "WorkBuddy2API æ§åˆ¶å°"
+sc.TargetPath = exe
+sc.WorkingDirectory = dir
+sc.Description = nm
+' ÓĞ app.ico ¾ÍÓÃËü£¬Ã»ÓĞÔòÁô¿Õ£¨ÍË»Ø exe ×Ô´øÍ¼±ê£©
+ico = fso.BuildPath(dir, "app.ico")
+If fso.FileExists(ico) Then sc.IconLocation = ico
 sc.Save
 WScript.Echo "OK " & lnk & " exists=" & fso.FileExists(lnk)

@@ -20,8 +20,8 @@ func TestInferManagedPreset(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "zcode 真实数据（venv python.exe + cli.py serve + /meta）",
-			command:    `D:/AiWork/ZCode/zcode2api/.venv/Scripts/python.exe`,
+			name:       "zcode：venv 里的 python.exe 绝对路径 + cli.py serve + /meta",
+			command:    `C:/venvs/zcode2api/Scripts/python.exe`,
 			args:       []string{"cli.py", "serve"},
 			healthPath: "/meta",
 			portEnvVar: "ZCODE_PORT",
@@ -108,12 +108,12 @@ func TestInferManagedPreset(t *testing.T) {
 // 绝对路径、带 .exe、或 python3，推断时必须视作同一种东西。
 func TestNormalizeCommand(t *testing.T) {
 	cases := map[string]string{
-		`D:/AiWork/ZCode/zcode2api/.venv/Scripts/python.exe`: "python",
-		`C:\tools\wb2api.EXE`:                                "wb2api",
-		"python3":                                            "python",
-		"python":                                             "python",
-		"":                                                   "",
-		"  ":                                                 "",
+		`C:/venvs/zcode2api/Scripts/python.exe`: "python",
+		`C:\tools\wb2api.EXE`:                   "wb2api",
+		"python3":                               "python",
+		"python":                                "python",
+		"":                                      "",
+		"  ":                                    "",
 	}
 	for in, want := range cases {
 		if got := normalizeCommand(in); got != want {

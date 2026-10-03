@@ -168,8 +168,6 @@ python _e2e/gui_check.py           # 托盘与窗口生命周期
 | `gui_check.py` | 需要**独占**：机器上不能有其它 ModelMux 实例，否则会被单实例逻辑唤出并退出 |
 | `verify_workbuddy.py` | ⚠️ 会**写你的真实配置**，慎跑 |
 
-另有一组前置说明：跑 `verify_*_ui.py` 之前先启动一个实例；`gui_check.py` 要独占，两者不能同时跑。
-
 ## 维护脚本
 
 ```bash

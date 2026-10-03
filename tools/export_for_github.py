@@ -16,7 +16,9 @@
 
 目标目录已存在时默认中止，避免误覆盖；确认要「同步进已有仓库」时设：
     GITHUB_EXPORT_INTO=1 python tools/export_for_github.py
-（该模式下只覆盖同名文件，不动 .git，也不删除目标里的其它文件。）
+（该模式下只覆盖同名文件，不动 .git；**源里已删除的文件会从目标里一并清掉**——
+因为只增不删会让「已从白名单撤下的文件」永久留在公开仓库里。要保留它们设
+GITHUB_EXPORT_NO_PRUNE=1。清理范围仅限 DIRS 列出的目录，根目录只报告不删。）
 """
 import os
 import shutil
@@ -27,6 +29,7 @@ SRC = os.path.abspath(os.environ.get("MODELMUX_SRC") or os.path.dirname(HERE))
 DST = os.path.abspath(os.environ.get("GITHUB_EXPORT_DIR")
                       or os.path.join(os.path.dirname(SRC), "modelmux-github"))
 INTO = os.environ.get("GITHUB_EXPORT_INTO") == "1"
+NO_PRUNE = os.environ.get("GITHUB_EXPORT_NO_PRUNE") == "1"
 
 # 根目录下的单文件
 ROOT_FILES = ["go.mod", "go.sum", "main.go", "app.ico", "appres.syso",
@@ -51,7 +54,6 @@ def main():
 
     copied, skipped = [], []
     os.makedirs(DST, exist_ok=True)
-
     for fn in ROOT_FILES:
         s = os.path.join(SRC, fn)
         if os.path.exists(s):
@@ -80,12 +82,47 @@ def main():
                 shutil.copy2(os.path.join(dirpath, fn), dstp)
                 copied.append(rel)
 
+    # 清理「源里已经没有了、但目标里还留着」的文件。
+    # 只增不删的后果：从白名单撤下的文件会永久留在公开仓库里，而它可能正含
+    # 本机路径或残留配置——正是这次踩到的坑。清理范围严格限制在 DIRS 内，
+    # 不碰 .git，也不动根目录（根目录的额外文件只报告）。
+    pruned, extra_root = [], []
+    want = set(copied)
+    if INTO and not NO_PRUNE:
+        for d in DIRS:
+            droot = os.path.join(DST, d)
+            if not os.path.isdir(droot):
+                continue
+            for dirpath, dirnames, filenames in os.walk(droot, topdown=False):
+                dirnames[:] = [x for x in dirnames if x != ".git"]
+                for fn in filenames:
+                    rel = os.path.relpath(os.path.join(dirpath, fn), DST)
+                    if rel not in want:
+                        os.remove(os.path.join(dirpath, fn))
+                        pruned.append(rel)
+                if dirpath != droot and not os.listdir(dirpath):
+                    os.rmdir(dirpath)
+    if INTO:
+        for fn in os.listdir(DST):
+            p = os.path.join(DST, fn)
+            if os.path.isfile(p) and fn not in ROOT_FILES and not fn.startswith("."):
+                extra_root.append(fn)
+
     print("源   :", SRC)
     print("目标 :", DST)
     print("复制 :", len(copied), "个文件")
     print("跳过 :", len(skipped), "个（敏感/缓存/产物）")
     for s in sorted(skipped):
         print("   -", s)
+    if INTO and not NO_PRUNE:
+        print("清理 :", len(pruned), "个（源里已删除，目标里清掉）")
+        for s in sorted(pruned):
+            print("   -", s)
+        extra_root = [x for x in extra_root if x not in copied]
+        if extra_root:
+            print("注意 : 目标根目录有白名单外的文件，未删除，请自行确认：")
+            for s in sorted(extra_root):
+                print("   ?", s)
 
 
 if __name__ == "__main__":

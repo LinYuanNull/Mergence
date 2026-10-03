@@ -49,7 +49,7 @@ func TestChannelRawInfersPresetWhenConfigLacksIt(t *testing.T) {
 	}{
 		{
 			name: "zcode", want: "zcode",
-			command: "D:/AiWork/ZCode/zcode2api/.venv/Scripts/python.exe",
+			command: "C:/venvs/zcode2api/Scripts/python.exe",
 			args:    []string{"cli.py", "serve"},
 			health:  "/meta", portEnv: "ZCODE_PORT",
 		},
