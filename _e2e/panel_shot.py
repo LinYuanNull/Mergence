@@ -6,6 +6,7 @@
 """
 import base64
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -14,7 +15,8 @@ import urllib.request
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from drive_ui import EDGE  # noqa: E402  共享的浏览器定位
 PORT = sys.argv[1]
 OUT = sys.argv[2]
 URL = "http://127.0.0.1:%s/" % PORT

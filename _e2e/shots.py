@@ -22,10 +22,12 @@ EXE = os.path.join(ROOT, "ModelMux.exe")
 FAKE = os.path.join(ROOT, "_e2e", "fake_upstream.py")
 # 用当前解释器；换机器/换 Python 位置不必改代码（可用 MODELMUX_PY 覆盖）。
 PY = os.environ.get("MODELMUX_PY", sys.executable)
-EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 FAKE_PORT = 18092
 
 sys.stdout.reconfigure(encoding="utf-8")
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from drive_ui import EDGE  # noqa: E402  共享的浏览器定位
 
 CONFIG = {
     "version": 2,

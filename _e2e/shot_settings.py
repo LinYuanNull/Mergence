@@ -2,9 +2,7 @@
 """截设置页（含限时套餐领取卡片）。设置页是隐藏的 view，纯 --screenshot 拍不到。"""
 import base64, json, os, subprocess, sys, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from drive_ui import WS, wait_json
-
-EDGE = r"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+from drive_ui import EDGE, WS, wait_json
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shots", "settings_claim.png")
 PORT = 9341
 BASE = "http://127.0.0.1:1234/"

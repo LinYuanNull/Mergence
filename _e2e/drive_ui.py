@@ -27,7 +27,24 @@ EXE = os.path.join(ROOT, "ModelMux.exe")
 FAKE = os.path.join(ROOT, "_e2e", "fake_upstream.py")
 # 用当前解释器；换机器/换 Python 位置不必改代码（可用 MODELMUX_PY 覆盖）。
 PY = os.environ.get("MODELMUX_PY", sys.executable)
-EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+
+
+def _find_edge():
+    """定位 Edge 可执行文件：优先 MODELMUX_EDGE / EDGE 环境变量，其次常见安装路径。
+
+    不同机器上 Edge 可能在 Program Files 或 Program Files (x86)，
+    也可能想换用 Chrome —— 都不必改代码。
+    """
+    for p in (os.environ.get("MODELMUX_EDGE") or os.environ.get("EDGE"),
+              r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+              r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+              os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe")):
+        if p and os.path.exists(p):
+            return p
+    return r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+
+
+EDGE = _find_edge()
 FAKE_PORT = 18093
 CDP_PORT = 9333
 

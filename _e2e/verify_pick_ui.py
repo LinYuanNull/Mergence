@@ -16,7 +16,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from drive_ui import WS, wait_json  # noqa: E402  复用 CDP 客户端
+from drive_ui import EDGE, WS, wait_json  # noqa: E402  复用 CDP 客户端
 
 # 项目根：由本文件位置推导（_e2e/ 的上一层），不写死本机绝对路径。
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -26,7 +26,6 @@ FAKE = os.path.join(ROOT, "_e2e", "fake_upstream.py")
 SHOTS = os.path.join(ROOT, "_e2e", "shots")
 # 用当前解释器；换机器/换 Python 位置不必改代码（可用 MODELMUX_PY 覆盖）。
 PY = os.environ.get("MODELMUX_PY", sys.executable)
-EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 FAKE_PORT = 18094
 CDP_PORT = 9335
 

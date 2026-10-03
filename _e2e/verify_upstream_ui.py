@@ -17,9 +17,7 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from drive_ui import WS, wait_json  # noqa: E402
-
-EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+from drive_ui import EDGE, WS, wait_json  # noqa: E402
 BASE = "http://127.0.0.1:1234/"
 PORT = 9350
 SHOTS = os.path.join(HERE, "shots")

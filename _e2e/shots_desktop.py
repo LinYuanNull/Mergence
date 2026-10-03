@@ -13,7 +13,8 @@ import urllib.request
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from drive_ui import EDGE  # noqa: E402  共享的浏览器定位
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shots")
 os.makedirs(OUT, exist_ok=True)
 
