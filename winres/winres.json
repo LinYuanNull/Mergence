@@ -1,0 +1,59 @@
+{
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0409": [
+        "icon16.png",
+        "icon32.png",
+        "icon48.png",
+        "icon64.png",
+        "icon128.png",
+        "icon256.png"
+      ]
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "identity": {
+          "name": "",
+          "version": ""
+        },
+        "description": "ModelMux",
+        "minimum-os": "win7",
+        "execution-level": "asInvoker",
+        "ui-access": false,
+        "auto-elevate": false,
+        "dpi-awareness": "permonitorv2",
+        "disable-theming": false,
+        "disable-window-filtering": false,
+        "high-resolution-scrolling-aware": false,
+        "long-path-aware": false,
+        "max-version-tested": false,
+        "ultra-high-resolution-scrolling-aware": false
+      }
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": {
+          "file_version": "1.0.0.0",
+          "product_version": "1.0.0.0"
+        },
+        "info": {
+          "0409": {
+            "CompanyName": "",
+            "FileDescription": "ModelMux",
+            "FileVersion": "1.0.0.0",
+            "InternalName": "ModelMux",
+            "LegalCopyright": "",
+            "OriginalFilename": "ModelMux.exe",
+            "ProductName": "ModelMux",
+            "ProductVersion": "1.0.0.0",
+            "Comments": "多家 API 聚合网关 · 桌面应用"
+          }
+        }
+      }
+    }
+  }
+}

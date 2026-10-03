@@ -1,0 +1,36 @@
+# ── 构建产物 ─────────────────────────────────────────────
+/ModelMux.exe
+*.exe
+*.exe~
+*.syso
+!/appres.syso
+
+# ── Python / 测试运行期缓存 ──────────────────────────────
+__pycache__/
+*.pyc
+*.pid
+
+# 测试写出的临时配置文件（可能带真实 access_key，别提交）
+*.tmp
+
+# _e2e 跑测试时产生的隔离数据目录（Edge/WebView2 缓存、隔离 HOME、截图）
+_e2e/home/
+_e2e/gui_home/
+_e2e/ui_home/
+_e2e/claim_home/
+_e2e/shots/
+
+# ── 本机数据快照（内含真实账号 token 与计费数据，绝不公开）──
+_ref/
+
+# ── 历史快照与数据包 ────────────────────────────────────
+backups/
+_backup/
+
+# ── 编辑器 / 系统 ───────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+.DS_Store
