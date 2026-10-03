@@ -53,6 +53,7 @@ curl http://127.0.0.1:1234/v1/chat/completions \
 - [运行与配置](#运行与配置)
 - [对外接口](#对外接口)
 - [端到端验证](#端到端验证)
+- [维护脚本](#维护脚本)
 - [第三方与许可](#第三方与许可)
 
 ## 设计约束
@@ -168,6 +169,20 @@ python _e2e/gui_check.py           # 托盘与窗口生命周期
 | `verify_workbuddy.py` | ⚠️ 会**写你的真实配置**，慎跑 |
 
 另有一组前置说明：跑 `verify_*_ui.py` 之前先启动一个实例；`gui_check.py` 要独占，两者不能同时跑。
+
+## 维护脚本
+
+```bash
+python tools/backup_project.py      # 全量快照（源码 + 配置 + 编译产物），默认输出到仓库同级的 _backups/
+python tools/export_for_github.py   # 导出可公开的干净副本（白名单式，自动挡掉 _ref/ 与测试残留配置）
+```
+
+`export_for_github.py` 是**白名单式**的：只列进清单的文件才会出去，因此新增文件时不会
+不小心把 `_ref/`（含真实账号 token）或 `internal/web/.tmp`（测试写出的残留配置，可能带真实
+`access_key`）这样的东西带进公开仓库。目标目录已存在时默认中止，确认要同步进已有仓库时加
+`GITHUB_EXPORT_INTO=1`（只覆盖同名文件，不动 `.git`）。
+
+两个脚本的路径都自动推导，也可用 `MODELMUX_SRC` / `BACKUP_DIR` / `GITHUB_EXPORT_DIR` 覆盖。
 
 ## 第三方与许可
 
