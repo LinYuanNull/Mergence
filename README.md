@@ -48,6 +48,7 @@ curl http://127.0.0.1:1234/v1/chat/completions \
 
 - [设计约束](#设计约束)
 - [两类渠道](#两类渠道)
+- [已并入的 Provider](#已并入的-provider)
 - [主要能力](#主要能力)
 - [构建](#构建)
 - [运行与配置](#运行与配置)
@@ -78,11 +79,51 @@ curl http://127.0.0.1:1234/v1/chat/completions \
 
 | 类型 | 配置键 | 运行形态 |
 |---|---|---|
-| **内嵌型** | `embedded_providers` | 跑在网关进程内。自定义 OpenAI 兼容端点，或选用内置预设（OpenRouter 等）。支持多 Key 轮询、权重、模型前缀。 |
+| **内嵌型** | `embedded_providers` | 跑在网关进程内。自定义 OpenAI 兼容端点，或选用内置预设（见下一节）。支持多 Key 轮询、权重、模型前缀。 |
 | **托管型** | `managed_providers` | 独立子进程。由编排器动态分配端口、注入环境变量、探活、断线重拉、退出时按树杀干净。 |
 
 托管型渠道的管理面板由网关**反向代理**到面板里，`Authorization` 由服务端注入——
 面板侧不接触上游密钥。
+
+## 已并入的 Provider
+
+预设只是**预填了一组字段的模板**：选中后每一项都能改，保存后就是一个普通渠道，
+不参与路由 / 额度 / 日志里的任何特殊分支。
+
+### 托管型预设（拉起独立子进程）
+
+| 预设 | 项目 | 说明 | 许可 |
+|---|---|---|---|
+| `workbuddy` | **[WorkBuddy 2 API](https://github.com/Thelatter666/workbuddy2api)**（wb2api） | 把 CodeBuddy 账号变成 OpenAI 兼容接口的多账号网关：OAuth 登录、账号池三因子加权轮转、分级熔断与冷却、会话粘性。启动命令 `wb2api.exe`，端口环境变量 `WB2A_LISTEN`。 | MIT |
+| `zcode` | **[zcode2api](https://github.com/dengyie/zcode2api)** | ZCode 账号运营 + 双协议网关一体机：账号池轮询、额度监控、限时套餐领取，同时对外提供 Anthropic Messages 与 OpenAI Chat Completions。Python 项目，启动命令 `python cli.py serve`，端口环境变量 `ZCODE_PORT`。 | AGPL-3.0 |
+| `new-api` | **[new-api](https://github.com/QuantumNous/new-api)** | 多渠道聚合与分发底座。启动命令 `new-api.exe`，端口环境变量 `PORT`。 | AGPL-3.0 |
+| `trae` | **[Trae](https://www.trae.ai)** 本地网关 | 把 Trae IDE 的模型能力暴露成本地 OpenAI 兼容端点。启动命令 `node server.js`；具体网关实现由使用者自行选择。 | 随所选项目 |
+| `custom-managed` | 自定义进程 | 任何能用环境变量指定端口、且暴露 OpenAI 兼容端点的可执行程序。 | — |
+
+> `workbuddy` 预设指向的是派生副本。它的原项目 `Sliverkiss/workbuddy2api` 仓库已不可访问，
+> 链接给出的是仍在维护的那一份（两者的 MIT 版权声明与 NOTICE 一并在仓库内保留）。
+
+### 内嵌型预设（进程内转发）
+
+| 预设 | 上游 | 协议 | 默认接入点 | 获取 Key |
+|---|---|---|---|---|
+| `openrouter` | [OpenRouter](https://openrouter.ai) | OpenAI | `https://openrouter.ai/api/v1` | [keys](https://openrouter.ai/keys) |
+| `zhipu` | [智谱 BigModel](https://open.bigmodel.cn) | OpenAI | `https://open.bigmodel.cn/api/paas/v4` | [apikeys](https://open.bigmodel.cn/usercenter/apikeys) |
+| `deepseek` | [DeepSeek 官方](https://platform.deepseek.com) | OpenAI | `https://api.deepseek.com/v1` | [api_keys](https://platform.deepseek.com/api_keys) |
+| `siliconflow` | [SiliconFlow 硅基流动](https://cloud.siliconflow.cn) | OpenAI | `https://api.siliconflow.cn/v1` | [ak](https://cloud.siliconflow.cn/account/ak) |
+| `moonshot` | [Moonshot / Kimi](https://platform.moonshot.cn) | OpenAI | `https://api.moonshot.cn/v1` | [api-keys](https://platform.moonshot.cn/console/api-keys) |
+| `anthropic` | [Anthropic（Claude）](https://console.anthropic.com) | **Anthropic Messages** | `https://api.anthropic.com` | [keys](https://console.anthropic.com/settings/keys) |
+| `openai` | [OpenAI 官方](https://platform.openai.com) | OpenAI | `https://api.openai.com/v1` | [api-keys](https://platform.openai.com/api-keys) |
+| `ollama` | [本地 Ollama](https://ollama.com) | OpenAI | `http://127.0.0.1:11434/v1` | 免 Key |
+| `vllm` | 本地 vLLM / [LM Studio](https://lmstudio.ai) | OpenAI | `http://127.0.0.1:8000/v1` | 免 Key |
+| `custom` | 任意 OpenAI 兼容端点 | OpenAI | 自填 | — |
+
+上表里只有 `anthropic` 一家协议不同：上游说 Anthropic Messages，由适配层转成 OpenAI 格式对外。
+`openai` 的部分新模型只在新版 Responses 协议下可用，需要时可在渠道里改选协议。
+
+托管型预设对应的都是**独立项目，由使用者自行获取与部署**。ModelMux 只把已存在于本机的
+程序作为子进程拉起，**不包含也不分发**这些程序的二进制，也不代其上游服务授予任何权利。
+AGPL 项目仅以独立进程方式调用，不构成衍生作品；各项目自身的免责声明同样适用。
 
 ## 主要能力
 
@@ -178,7 +219,9 @@ python tools/export_for_github.py   # 导出可公开的干净副本（白名单
 `export_for_github.py` 是**白名单式**的：只列进清单的文件才会出去，因此新增文件时不会
 不小心把 `_ref/`（含真实账号 token）或 `internal/web/.tmp`（测试写出的残留配置，可能带真实
 `access_key`）这样的东西带进公开仓库。目标目录已存在时默认中止，确认要同步进已有仓库时加
-`GITHUB_EXPORT_INTO=1`（只覆盖同名文件，不动 `.git`）。
+`GITHUB_EXPORT_INTO=1`——该模式下只覆盖同名文件、不动 `.git`，但会**清掉「源里已删除、
+目标里还留着」的文件**（否则从白名单撤下的文件会永久留在公开仓库里），要保留它们设
+`GITHUB_EXPORT_NO_PRUNE=1`。
 
 两个脚本的路径都自动推导，也可用 `MODELMUX_SRC` / `BACKUP_DIR` / `GITHUB_EXPORT_DIR` 覆盖。
 
@@ -192,8 +235,8 @@ Go 依赖：
 | `github.com/jchv/go-winloader` | ISC |
 | `golang.org/x/sys` | BSD-3-Clause |
 
-**托管型 provider 的说明**：它们（以及面板里出现的上游服务）是独立程序，由使用者自行获取，
-ModelMux 只负责把已存在于本机的程序作为子进程拉起。本项目**不包含也不分发**这些程序的二进制，
+**托管型 provider 与面板里出现的上游服务**都是独立程序，由使用者自行获取，本项目
+**不包含也不分发**其二进制。各项目的链接、许可与说明见[已并入的 Provider](#已并入的-provider)；
 其许可与使用合规性由各自项目及使用者自行负责。
 
 ## License
