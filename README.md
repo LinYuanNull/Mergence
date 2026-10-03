@@ -12,7 +12,7 @@
                      └─────────────┬──────────────┘
                                    │ 按 model 前缀路由
                      ┌─────────────▼──────────────┐
-                     │      internal/provider     │
+                     │   src/internal/provider    │
                      │  协议适配 · Key 池 · 保真转发 │
                      └───┬────────────────────┬───┘
           ┌──────────────┘                    └──────────────┐
@@ -28,10 +28,17 @@
 
 ```bash
 # 1) 构建（Windows / Go 1.25+ / 需 WebView2 运行时）
-go build -trimpath -ldflags="-s -w -H windowsgui" -o ModelMux.exe .
+#    脚本会先把 web/ 同步到 src/internal/assets/ 再编译，保证外置与内嵌一致
+python tools/release/build.py
 
 # 2) 运行（桌面壳 + 托盘）
 ./ModelMux.exe
+```
+
+也可以直接调 Go（此时 `src/internal/assets/` 用的是上次同步的副本）：
+
+```bash
+go build -C src -trimpath -ldflags="-s -w -H windowsgui" -o ../ModelMux.exe .
 ```
 
 启动后托盘图标右键 →「打开面板」，或在浏览器里访问启动日志打印的地址（默认 `http://127.0.0.1:1234/`）。
@@ -44,8 +51,58 @@ curl http://127.0.0.1:1234/v1/chat/completions \
   -d '{"model":"<你的模型名>","messages":[{"role":"user","content":"hi"}]}'
 ```
 
+## 仓库结构
+
+根目录只有 exe 本体与按职责分开的文件夹——一个文件夹只放一类东西：
+
+```
+modelmux/
+├─ ModelMux.exe          构建产物（go build 生成，唯一散落在根的文件）
+├─ README.md             ← 你正在读的
+├─ LICENSE
+├─ .gitignore
+│
+├─ web/                  面板前端资源（唯一真源：HTML / JS / CSS）
+├─ config/               用户配置（modelmux.json，首次启动自动生成）
+├─ data/                 运行期数据（logs/ usage/ cache/ instances/ ports.json）
+│
+├─ src/                  Go 源码
+│  ├─ main.go            启动顺序：配置 → 日志 → 单实例 → 端口 → 编排 → 服务 → 窗口/托盘
+│  ├─ go.mod / go.sum
+│  ├─ app.ico / appres.syso / winres/   PE 资源：图标、DPI 清单、版本信息
+│  └─ internal/
+│     ├─ config/         配置读写与归一化（未知协议明确报错，不猜默认值）
+│     ├─ logging/        结构化日志：内存环 + 滚动文件
+│     ├─ orchestrator/   托管型 provider 的子进程生命周期与端口分配（杀树、先等真退出）
+│     ├─ provider/       内嵌型渠道：路由、协议适配、Key 池、连接测试
+│     ├─ metrics/        用量计量与定价
+│     ├─ claim/          限时套餐的定时领取
+│     ├─ desktop/        WebView2 壳、托盘、单实例、有序退出
+│     ├─ assets/         前端资源的**构建镜像**（由 web/ 同步而来，不要手改）
+│     └─ web/            内置 HTTP 服务：对外 /v1 出口 + 对内 /api 控制面
+│
+├─ test/                 端到端验证脚本（假上游 + CDP 驱动真实界面）
+│  └─ shot_tools/        界面截图（给人看的，不含断言）
+├─ tools/                开发与发布期脚本
+│  ├─ release/           构建、全量快照、公开副本导出
+│  ├─ icon/              图标生成与比对
+│  └─ win/               桌面集成：快捷方式、窗口截图
+└─ docs/                 设计与改造记录
+```
+
+### 前端资源为什么有两份
+
+`go:embed` **不允许 `..`**，而面板资源要放进 `internal/assets` 这个包才能被内嵌——
+所以「根目录的 `web/`」和「`src/internal/assets/`」在物理上必须是两处。约定：
+
+- **`web/` 是唯一真源**，改前端只改这里。
+- `src/internal/assets/` 是**构建镜像**，由 `tools/release/build.py` 在编译前用 sha256 逐文件同步，不手工改。
+- 运行时**优先读 exe 同级的 `web/`**（便于热改调试），读不到才回落到 exe 内嵌副本。
+  也就是说：删掉 `web/` 应用照常工作，只是前端不能外置调整。
+
 ## 目录
 
+- [仓库结构](#仓库结构)
 - [设计约束](#设计约束)
 - [两类渠道](#两类渠道)
 - [已并入的 Provider](#已并入的-provider)
@@ -61,7 +118,7 @@ curl http://127.0.0.1:1234/v1/chat/completions \
 
 这三条是硬约束，改动时不能破：
 
-1. **对外契约只有一份**——OpenAI Chat Completions。任何上游的协议差异都在 `internal/provider` 的适配层吸收，不对外暴露第二套格式。
+1. **对外契约只有一份**——OpenAI Chat Completions。任何上游的协议差异都在 `src/internal/provider` 的适配层吸收，不对外暴露第二套格式。
 2. **不 `import` AGPL 代码**。AGPL 项目只允许**进程级**调用：它是独立子进程，不构成衍生作品。
 3. **不随包分发第三方二进制**。托管型 provider 由用户自行获取，本项目不分发。
 
@@ -140,16 +197,27 @@ AGPL 项目仅以独立进程方式调用，不构成衍生作品；各项目自
 
 要求：**Windows 10/11**、**Go 1.25+**、**WebView2 运行时**（Windows 11 自带，Windows 10 需[单独安装](https://developer.microsoft.com/microsoft-edge/webview2/)）。
 
+推荐用发布脚本（它会先同步 `web/` → `src/internal/assets/` 再编译，产物落在仓库根）：
+
 ```bash
-go build -trimpath -ldflags="-s -w -H windowsgui" -o ModelMux.exe .
+python tools/release/build.py            # 同步 + 编译
+python tools/release/build.py --check    # 只校验两份前端是否一致，不编译
+python tools/release/build.py --no-build # 只同步，不编译
+```
+
+直接调 Go 也可以，但要**自己保证** `src/internal/assets/` 是最新的：
+
+```bash
+go build -C src -trimpath -ldflags="-s -w -H windowsgui" -o ../ModelMux.exe .
 ```
 
 `-H windowsgui` 必须有，否则会多出一个黑色控制台窗口。
 
-图标资源 `appres.syso` 已随仓库提供，`go build` 会自动拾取。需要重建时：
+图标资源 `src/appres.syso` 已随仓库提供，`go build` 会自动拾取（同目录的 `*.syso` 会被自动收集）。
+需要重建时：
 
 ```bash
-go run github.com/akavel/rsrc@v0.10.2 -ico app.ico -o appres.syso
+cd src && go run github.com/akavel/rsrc@v0.10.2 -ico app.ico -o appres.syso
 ```
 
 ## 运行与配置
@@ -159,14 +227,31 @@ ModelMux.exe                 # 桌面壳 + 托盘
 ModelMux.exe -headless       # 只跑服务（等价于 MODELMUX_HEADLESS=1）
 ```
 
-数据目录默认 `%LOCALAPPDATA%\ModelMux`，可用环境变量 `MODELMUX_HOME` 覆盖：
+**数据目录默认跟 exe 同级**，也就是「绿色 / 便携」形态：把整个文件夹拷到哪，配置和数据就跟到哪。
 
-| 文件 | 说明 |
-|---|---|
-| `modelmux.json` | 配置（`access_key` 首次启动自动生成） |
-| `ports.json` | 上次用过的端口，重启优先复用 |
-| `logs/` | 结构化日志 |
-| `instances/` | 托管型 provider 的实例数据 |
+```
+modelmux/
+├─ ModelMux.exe
+├─ config/
+│  └─ modelmux.json      配置（access_key 首次启动自动生成）
+├─ data/
+│  ├─ ports.json         上次用过的端口，重启优先复用
+│  ├─ logs/              结构化日志
+│  ├─ usage/             用量计量累积
+│  ├─ cache/             WebView2 用户数据目录
+│  └─ instances/         托管型 provider 的实例数据
+└─ web/                  （可选）外置前端，见上文「前端资源为什么有两份」
+```
+
+查找顺序（第一个成立者胜出）：
+
+1. 环境变量 `MODELMUX_HOME`（显式指定，最高优先级）
+2. **exe 所在目录**——但必须**实测可写**（会在该目录建临时文件再删掉验证），
+   避免 exe 放在 `Program Files`、只读介质或受控文件夹访问拦截时静默失败
+3. `%LOCALAPPDATA%\ModelMux`（回落，Windows 上的常规选择）
+4. 系统临时目录下的 `ModelMux`（最后的兜底）
+
+`config/` 与 `data/` 缺失时会在启动时自动创建，不需要手工准备。
 
 面板监听在 `127.0.0.1`，端口默认动态分配；可在面板「设置」里固定为指定端口（如 `1234`）。
 实际地址以启动日志为准。
@@ -175,7 +260,7 @@ ModelMux.exe -headless       # 只跑服务（等价于 MODELMUX_HEADLESS=1）
 
 | 路径 | 说明 |
 |---|---|
-| `/` | 面板（静态资源经 `//go:embed` 编进 exe） |
+| `/` | 面板（优先读 exe 同级 `web/`，读不到用 exe 内嵌副本） |
 | `/v1/chat/completions`、`/v1/models` | OpenAI 兼容出口，需 `access_key` |
 | `/api/status`、`/api/healthz`、`/api/logs` | 状态与日志 |
 | `/api/channels*` | 渠道管理（增删改查 / 启停 / 测试 / 拉模型） |
@@ -187,17 +272,20 @@ ModelMux.exe -headless       # 只跑服务（等价于 MODELMUX_HEADLESS=1）
 
 ## 端到端验证
 
-`_e2e/` 下是**真实运行的**验证脚本（需要 Python 3）：用假上游覆盖协议分支，用 CDP 驱动真实界面点击。
+`test/` 下是**真实运行的**验证脚本（需要 Python 3）：用假上游覆盖协议分支，用 CDP 驱动真实界面点击。
 
 ```bash
-python _e2e/verify.py              # 全链路：托管型 provider 全生命周期、端口热切换
-python _e2e/verify_upstream_ui.py  # 上游控制台逐视图
-python _e2e/verify_side_console.py # 侧栏渠道卡与常驻控制台入口
-python _e2e/verify_layout_ui.py    # 侧栏 / 概览拆分 / 渠道嵌套编辑
-python _e2e/verify_pick_ui.py      # 拉取模型全选与结果弹窗
-python _e2e/verify_theme.py        # 首帧主题（防亮暗闪烁）
-python _e2e/verify_claim.py        # 限时套餐定时领取链路
-python _e2e/gui_check.py           # 托盘与窗口生命周期
+python test/verify.py              # 全链路：托管型 provider 全生命周期、端口热切换
+python test/verify_upstream_ui.py  # 上游控制台逐视图
+python test/verify_side_console.py # 侧栏渠道卡与常驻控制台入口
+python test/verify_layout_ui.py    # 侧栏 / 概览拆分 / 渠道嵌套编辑
+python test/verify_pick_ui.py      # 拉取模型全选与结果弹窗
+python test/verify_theme.py        # 首帧主题（防亮暗闪烁）
+python test/verify_claim.py        # 限时套餐定时领取链路
+python test/gui_check.py           # 托盘与窗口生命周期
+python test/check_sources.py       # 源码级不变式（内联 style、通知 API 是否被重新引入）
+python test/verify_silent_minimize.py  # 最小化 / 隐藏不得产生系统通知
+python test/verify_proxy_real.py   # 真实 wb2api 账号管理代理（用你的真实配置）
 ```
 
 跑之前先看清楚：
@@ -208,22 +296,30 @@ python _e2e/gui_check.py           # 托盘与窗口生命周期
 | `verify_layout_ui.py` / `verify_side_console.py` / `verify_upstream_ui.py` / `verify_theme.py` | 需要**本机已有一个实例在跑**（默认 `http://127.0.0.1:1234/`） |
 | `gui_check.py` | 需要**独占**：机器上不能有其它 ModelMux 实例，否则会被单实例逻辑唤出并退出 |
 | `verify_workbuddy.py` | ⚠️ 会**写你的真实配置**，慎跑 |
+| `verify_proxy_real.py` | ⚠️ 用你的**真实配置**启动，会拉起真实托管子进程；需要本机真有一个可用的 wb2api 渠道 |
+| `verify_silent_minimize.py` | 需要**本机已有一个实例在跑**（按 exe 名找 PID，并会最小化该窗口） |
+| `check_sources.py` | 不需要实例，纯源码检查 |
+
+`test/shot_tools/` 下是**截图工具**（`shots*.py`、`panel_shot.py`、`shot_settings.py`），
+只产出给人看的 PNG、不含任何断言，所以不在上面的验证清单里。
 
 ## 维护脚本
 
 ```bash
-python tools/backup_project.py      # 全量快照（源码 + 配置 + 编译产物），默认输出到仓库同级的 _backups/
-python tools/export_for_github.py   # 导出可公开的干净副本（白名单式，自动挡掉 _ref/ 与测试残留配置）
+python tools/release/build.py               # 构建：同步 web/ → src/internal/assets/，再编出根目录的 ModelMux.exe
+python tools/release/backup_project.py      # 全量快照（源码 + 配置 + 编译产物），默认输出到仓库同级的 _backups/
+python tools/release/export_for_github.py   # 导出可公开的干净副本（白名单式）
 ```
 
-`export_for_github.py` 是**白名单式**的：只列进清单的文件才会出去，因此新增文件时不会
-不小心把 `_ref/`（含真实账号 token）或 `internal/web/.tmp`（测试写出的残留配置，可能带真实
-`access_key`）这样的东西带进公开仓库。目标目录已存在时默认中止，确认要同步进已有仓库时加
+`export_for_github.py` 是**白名单式**的：只列进清单的文件才会出去（`src/` `web/` `docs/` `tools/` `test/`
+与 `README.md` `LICENSE` `.gitignore`），因此新增文件时不会不小心把含真实密钥的 `config/`
+或运行期 `data/` 带进公开仓库。含真实账号 token 的 `_ref/` 与历史快照已移出仓库，
+`.gitignore` 里的规则保留作兜底。目标目录已存在时默认中止，确认要同步进已有仓库时加
 `GITHUB_EXPORT_INTO=1`——该模式下只覆盖同名文件、不动 `.git`，但会**清掉「源里已删除、
 目标里还留着」的文件**（否则从白名单撤下的文件会永久留在公开仓库里），要保留它们设
 `GITHUB_EXPORT_NO_PRUNE=1`。
 
-两个脚本的路径都自动推导，也可用 `MODELMUX_SRC` / `BACKUP_DIR` / `GITHUB_EXPORT_DIR` 覆盖。
+三个脚本的路径都自动推导，也可用 `MODELMUX_SRC` / `BACKUP_DIR` / `GITHUB_EXPORT_DIR` / `GO` 覆盖。
 
 ## 第三方与许可
 

@@ -3,7 +3,7 @@
 *.exe
 *.exe~
 *.syso
-!/appres.syso
+!/src/appres.syso
 
 # ── Python / 测试运行期缓存 ──────────────────────────────
 __pycache__/
@@ -13,17 +13,24 @@ __pycache__/
 # 测试写出的临时配置文件（可能带真实 access_key，别提交）
 *.tmp
 
-# _e2e 跑测试时产生的隔离数据目录（Edge/WebView2 缓存、隔离 HOME、截图）
-_e2e/home/
-_e2e/gui_home/
-_e2e/ui_home/
-_e2e/claim_home/
-_e2e/shots/
+# test 跑测试时产生的隔离数据目录（Edge/WebView2 缓存、隔离 HOME、截图）
+test/home/
+test/gui_home/
+test/ui_home/
+test/claim_home/
+test/shots/
 
-# ── 本机数据快照（内含真实账号 token 与计费数据，绝不公开）──
+# ── 本机运行期目录（随机器变化，不进版本库）────────────────
+# config/ 放用户配置（含真实 access_key 与上游密钥）；
+# data/   放日志、用量、WebView2 缓存、托管实例数据。
+# 两者都由程序启动时自动创建，缺了也能跑。
+config/
+data/
+
+# ── 本机数据快照（内含真实账号 token 与计费数据）与历史快照 ──
+# 三者已移出仓库、只存在于仓库之外；规则保留作兜底：
+# 万一又被放回仓库内，不至于被误提交。
 _ref/
-
-# ── 历史快照与数据包 ────────────────────────────────────
 backups/
 _backup/
 
