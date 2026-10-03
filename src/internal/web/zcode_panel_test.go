@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"modelmux/internal/config"
 	"modelmux/internal/provider"
@@ -14,19 +15,22 @@ import (
 
 // zcode 面板代理的适配测试。
 //
-// 覆盖三件容易回归的事：
+// 覆盖四件容易回归的事：
 //  1. 目标前缀走契约表（/admin/api），而不是老配置里那个错值 /panel/api；
 //  2. 管理凭据来自 config.Claim.AdminKey，而不是渠道 route 的 api_key；
-//  3. zcode 的失败形态只开放只读、且把 401 翻译成人话。
+//  3. 写操作（POST/PUT/DELETE）与方法、请求体一起透传，且 401 仍翻译成人话；
+//  4. 上游等待上限按方法/路径分档（领取最宽）。
 //
 // workbuddy 渠道作为对照组，确认这些适配没有误伤非 zcode 的网关。
 
-// fakeUpstream 记录最近一次收到的路径与 Authorization，并按给定状态回包。
+// fakeUpstream 记录最近一次收到的路径、方法、请求体与 Authorization，并按给定状态回包。
 type fakeUpstream struct {
-	srv  *httptest.Server
-	hits atomic.Int32
-	path atomic.Value
-	auth atomic.Value
+	srv     *httptest.Server
+	hits    atomic.Int32
+	path    atomic.Value
+	auth    atomic.Value
+	method  atomic.Value
+	reqBody atomic.Value
 }
 
 func newFakeUpstream(t *testing.T, status int, body string) *fakeUpstream {
@@ -36,6 +40,9 @@ func newFakeUpstream(t *testing.T, status int, body string) *fakeUpstream {
 		f.hits.Add(1)
 		f.path.Store(r.URL.Path)
 		f.auth.Store(r.Header.Get("Authorization"))
+		f.method.Store(r.Method)
+		b, _ := io.ReadAll(r.Body)
+		f.reqBody.Store(string(b))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
@@ -51,6 +58,16 @@ func (f *fakeUpstream) gotPath() string {
 
 func (f *fakeUpstream) gotAuth() string {
 	v, _ := f.auth.Load().(string)
+	return v
+}
+
+func (f *fakeUpstream) gotMethod() string {
+	v, _ := f.method.Load().(string)
+	return v
+}
+
+func (f *fakeUpstream) gotBody() string {
+	v, _ := f.reqBody.Load().(string)
 	return v
 }
 
@@ -160,12 +177,67 @@ func TestZcodePanelProxyTranslates401(t *testing.T) {
 	}
 }
 
-// 5：zcode 只代理 GET，写请求 405 且不转发。
-func TestZcodePanelProxyRejectsWrites(t *testing.T) {
-	fake := newFakeUpstream(t, http.StatusOK, `{}`)
+// 5：写操作透传——方法、路径、请求体一个都不改，凭据照旧注入。
+func TestZcodePanelProxyForwardsWrites(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{"新增账号", http.MethodPost, "accounts", `{"provider":"zai","tokens":["t1","t2"]}`},
+		{"启停账号", http.MethodPost, "accounts/acc-1/enabled", `{"enabled":false}`},
+		{"编辑账号", http.MethodPut, "accounts/acc-1", `{"name":"改名后的账号"}`},
+		{"删除账号", http.MethodDelete, "accounts", `["acc-1","acc-2"]`},
+		{"领取套餐", http.MethodPost, "claim", `{"account_ids":["acc-1"]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeUpstream(t, http.StatusOK, `{"ok":true}`)
+
+			s, base := newTestServer(t, func(c *config.Config) {
+				c.Claim.AdminKey = "admin-secret"
+				c.Managed = append(c.Managed, zcodeManaged())
+			})
+			registerManagedAs(t, s, s.currentConfig().Managed[0], fake.srv.URL)
+
+			req, err := http.NewRequest(tc.method,
+				base+"/api/channels/zcode/upstream/"+tc.path,
+				strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := readBody(t, resp)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("%s 应 200，得到 %d（body=%s）", tc.method, resp.StatusCode, got)
+			}
+			if m := fake.gotMethod(); m != tc.method {
+				t.Errorf("方法应原样转发为 %s，得到 %s", tc.method, m)
+			}
+			if p := fake.gotPath(); p != "/admin/api/"+tc.path {
+				t.Errorf("路径应打到 /admin/api/%s，得到 %q", tc.path, p)
+			}
+			if b := fake.gotBody(); b != tc.body {
+				t.Errorf("请求体应逐字节透传\n  want %s\n  got  %s", tc.body, b)
+			}
+			if a := fake.gotAuth(); a != "Bearer admin-secret" {
+				t.Errorf("写操作同样要注入 Claim.AdminKey，得到 %q", a)
+			}
+		})
+	}
+}
+
+// 6：写操作的 401 同样要翻译成人话——放开方法不等于丢掉这条。
+func TestZcodePanelProxyTranslates401OnWrite(t *testing.T) {
+	fake := newFakeUpstream(t, http.StatusUnauthorized, `{"detail":"unauthorized"}`)
 
 	s, base := newTestServer(t, func(c *config.Config) {
-		c.Claim.AdminKey = "admin-secret"
+		c.Claim.AdminKey = "wrong-key"
 		c.Managed = append(c.Managed, zcodeManaged())
 	})
 	registerManagedAs(t, s, s.currentConfig().Managed[0], fake.srv.URL)
@@ -176,18 +248,42 @@ func TestZcodePanelProxyRejectsWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := readBody(t, resp)
-	if resp.StatusCode != http.StatusMethodNotAllowed {
-		t.Fatalf("zcode 写请求应 405，得到 %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("写操作遇到上游 401 应翻译成 502，得到 %d", resp.StatusCode)
 	}
-	if !strings.Contains(body, "只开放只读请求") {
-		t.Errorf("错误文案应说明只读，得到 %s", body)
-	}
-	if n := fake.hits.Load(); n != 0 {
-		t.Errorf("写请求不应转发到上游，实际发了 %d 次", n)
+	if !strings.Contains(body, "后台密码被网关拒绝") {
+		t.Errorf("错误文案应含「后台密码被网关拒绝」，得到 %s", body)
 	}
 }
 
-// 6：workbuddy 渠道行为不变——前缀仍取配置值、凭据仍是渠道 route key。
+// 7：上游等待上限分档。领取要解验证码，必须拿最宽的那一档——
+// 用只读的 30s 会把它误杀成超时。
+func TestProxyTimeoutForTiers(t *testing.T) {
+	cases := []struct {
+		method, rest string
+		want         time.Duration
+	}{
+		{http.MethodGet, "accounts", upstreamProxyTimeout},
+		{http.MethodGet, "monitoring", upstreamProxyTimeout},
+		{http.MethodGet, "login/poll/abc", upstreamProxyTimeout},
+		{http.MethodPost, "accounts", upstreamProxyWriteTimeout},
+		{http.MethodPut, "accounts/acc-1", upstreamProxyWriteTimeout},
+		{http.MethodDelete, "accounts", upstreamProxyWriteTimeout},
+		{http.MethodPost, "import", upstreamProxyWriteTimeout},
+		{http.MethodPost, "login/start", upstreamProxyWriteTimeout},
+		// 领取最宽，且前缀不区分方法、也不怕前导斜杠
+		{http.MethodPost, "claim", upstreamProxyClaimTimeout},
+		{http.MethodGet, "claim/preview", upstreamProxyClaimTimeout},
+		{http.MethodPost, "/claim/manual", upstreamProxyClaimTimeout},
+	}
+	for _, tc := range cases {
+		if got := proxyTimeoutFor(tc.method, tc.rest); got != tc.want {
+			t.Errorf("proxyTimeoutFor(%s, %q) = %v，want %v", tc.method, tc.rest, got, tc.want)
+		}
+	}
+}
+
+// 8：workbuddy 渠道行为不变——前缀仍取配置值、凭据仍是渠道 route key。
 func TestWorkBuddyPanelProxyUnchanged(t *testing.T) {
 	fake := newFakeUpstream(t, http.StatusOK, `{"total":0}`)
 

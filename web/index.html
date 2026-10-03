@@ -639,12 +639,17 @@
         <section class="card">
           <div class="card-hd"><h2>账号池</h2><span class="hint" id="zcAccHint">-</span>
             <div class="filters">
+              <button class="primary" id="btnZcAdd">添加账号</button>
+              <button class="ghost" id="btnZcClaim">领取套餐</button>
+              <button class="ghost" id="btnZcImport">导入</button>
+              <button class="ghost" id="btnZcExport">导出</button>
+              <button class="ghost" id="btnZcRefreshAll">刷新全部</button>
               <button class="ghost" id="btnZcAccRaw">原始返回</button>
               <button class="ghost" id="btnZcAccReload">刷新</button>
             </div></div>
           <div class="tablewrap">
             <table class="dt"><thead><tr>
-              <th>账号</th><th>状态</th><th>启用</th><th>额度</th><th>套餐</th><th>到期时间</th>
+              <th>账号</th><th>状态</th><th>启用</th><th>额度</th><th>套餐</th><th>到期时间</th><th class="c-ops zc-ops">操作</th>
             </tr></thead><tbody id="zcAccBody"></tbody></table>
             <div class="empty" id="zcAccEmpty">加载中…</div>
           </div>
@@ -657,6 +662,7 @@
         <section class="card">
           <div class="card-hd"><h2>网关状态</h2><span class="hint" id="zcMonHint">-</span>
             <div class="filters">
+              <button class="ghost" id="btnZcMonClear">清空监控</button>
               <button class="ghost" id="btnZcMonRaw">原始返回</button>
               <button class="ghost" id="btnZcMonReload">刷新</button>
             </div></div>
@@ -674,15 +680,15 @@
         </section>
       </section>
 
-      <!-- 上游：zcode2api 网关设置（只读） -->
+      <!-- 上游：zcode2api 网关设置（在 ModelMux 内直接改，不必再去网关自己的面板） -->
       <section class="view" id="view-up-zc-settings" hidden>
         <section class="card">
           <div class="card-hd"><h2>网关设置</h2><span class="hint" id="zcSetHint">-</span>
             <div class="filters">
+              <button class="primary" id="btnZcSetEdit">修改设置</button>
               <button class="ghost" id="btnZcSetRaw">原始返回</button>
               <button class="ghost" id="btnZcSetReload">刷新</button>
             </div></div>
-          <div class="warn-line">这里是只读视图：密钥以掩码展示，浏览器不接触明文；修改设置请去网关自己的面板。</div>
           <div class="ep" id="zcSetBody"></div>
         </section>
       </section>
@@ -868,15 +874,18 @@
             </div>
           </div>
           <div class="konly" data-kind="managed" hidden>
-            <div class="field" data-f="command"><label>启动命令 <span class="req">必填</span></label>
+            <div class="field" data-f="command" data-mode="process"><label>启动命令 <span class="req">必填</span></label>
               <input id="fCmd" placeholder="wb2api.exe"></div>
-            <div class="field"><label>启动参数</label><textarea id="fArgs" rows="2"></textarea></div>
-            <div class="row2">
+            <div class="field" data-mode="process"><label>启动参数</label><textarea id="fArgs" rows="2"></textarea></div>
+            <div class="row2" data-mode="process">
               <div class="field"><label>工作目录</label><input id="fDir" placeholder="D:\path"></div>
               <div class="field"><label>端口环境变量</label><input id="fPortEnv" placeholder="WB2A_LISTEN"></div>
             </div>
+            <div class="field" data-f="data_dir"><label>数据目录 <span class="opt">可选</span></label>
+              <input id="fDataDir" placeholder="留空 = 运行根/instances/&lt;渠道名&gt;/data">
+              <div class="fhint">进程内原生渠道指到原 wb2api 目录（含 auths 与 config.json）即可沿用已登录的账号。</div></div>
             <div class="row2">
-              <div class="field"><label>固定端口 <span class="opt">0 = 动态</span></label>
+              <div class="field" data-mode="process"><label>固定端口 <span class="opt">0 = 动态</span></label>
                 <input id="fFixedPort" type="number" min="0" max="65535" value="0"></div>
               <div class="field" data-f="health_path"><label>健康检查路径</label>
                 <input id="fHealthM" placeholder="/healthz"></div>
@@ -889,7 +898,7 @@
             <div class="row3">
               <div class="field" data-f="path_prefix"><label>API 前缀 <span class="opt">缺省 /v1</span></label>
                 <input id="fPathPrefix" placeholder="/v1"></div>
-              <div class="field"><label>就绪超时</label><input id="fReady" placeholder="40s"></div>
+              <div class="field" data-mode="process"><label>就绪超时</label><input id="fReady" placeholder="40s"></div>
               <div class="field" data-f="panel_api"><label>管理 API 前缀</label>
                 <input id="fPanelAPI" placeholder="/panel/api"></div>
             </div>
@@ -969,6 +978,143 @@
     <div class="modal-hd"><span id="trTitle">连接测试</span>
       <button class="ghost" id="btnCloseTr">关闭</button></div>
     <div class="modal-bd"><div id="trBody"></div></div>
+  </div>
+</div>
+
+<!-- zcode 账号：新增 / 编辑。
+     两页签对应上游的两种入池方式：粘贴 Token（POST /accounts）与设备码登录
+     （POST /login/start + 轮询 /login/poll）。编辑态只留「改名 + 换 Token」，
+     并额外挂一个「换发指纹」——它属于账号级维护动作，放这儿比塞进表格行更合适。 -->
+<div class="modal" id="zcAccModal" hidden>
+  <div class="modal-box">
+    <div class="modal-hd"><span id="zcAccTitle">添加账号</span>
+      <button class="ghost" id="btnZcAccClose">关闭</button></div>
+    <div class="modal-bd">
+      <div class="row2">
+        <div class="field"><label>账号名 <span class="opt">可留空</span></label>
+          <input id="zcAccName" placeholder="留空按「提供方-序号」自动命名"></div>
+        <div class="field"><label>提供方</label>
+          <select id="zcAccProvider"></select></div>
+      </div>
+      <div class="seg" id="zcAccTabs">
+        <button class="seg-b on" data-zt="paste">粘贴 Token</button>
+        <button class="seg-b" data-zt="login">设备码登录</button>
+      </div>
+      <div id="zcTabPaste">
+        <div class="field"><label>Token / API Key <span class="opt">每行一个，可批量</span></label>
+          <textarea id="zcAccTokens" rows="6" placeholder="粘贴 JWT 或 API Key，每行一个"></textarea>
+          <div class="fhint" id="zcAccTokHint">三段点分的 JWT 走 Coding Plan 通道；其余按 API Key 处理。重复的 token 会被上游自动跳过。</div></div>
+      </div>
+      <div id="zcTabLogin" hidden>
+        <div class="fetchrow">
+          <button class="primary" id="btnZcLoginStart">获取授权链接</button>
+          <button class="ghost" id="btnZcLoginCopy" disabled>复制链接</button>
+          <button class="ghost" id="btnZcLoginOpen" disabled>在浏览器打开</button>
+        </div>
+        <div class="field"><label>授权链接</label>
+          <textarea id="zcLoginUrl" rows="3" readonly placeholder="点「获取授权链接」后在此显示"></textarea></div>
+        <div class="field"><label>登录状态</label><div class="login-state" id="zcLoginState">未开始</div>
+          <div class="fhint">链接在浏览器里打开并完成授权后，这里会自动轮询到成功并加入账号池。</div></div>
+      </div>
+      <div class="field" id="zcAccNewTokField" hidden>
+        <label>新的 Token <span class="opt">留空则不改</span></label>
+        <textarea id="zcAccNewToken" rows="3" placeholder="粘贴新的 JWT 或 API Key"></textarea></div>
+    </div>
+    <div class="modal-ft">
+      <span class="fhint" id="zcAccMsg"></span>
+      <button class="ghost" id="btnZcAccFp" hidden>换发指纹</button>
+      <button class="primary" id="btnZcAccSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- zcode 账号：领取套餐。
+     先预览（GET /claim/preview）再领取（POST /claim）；领取要在上游解人机验证，
+     所以这里把「可能要等一分钟」写在明面上，别让用户以为卡住了。 -->
+<div class="modal" id="zcClaimModal" hidden>
+  <div class="modal-box">
+    <div class="modal-hd"><span>领取套餐</span>
+      <button class="ghost" id="btnZcClaimClose">关闭</button></div>
+    <div class="modal-bd">
+      <div class="fetchrow">
+        <button class="ghost" id="btnZcClaimPreview">预览可领套餐</button>
+        <button class="primary" id="btnZcClaimAll">全部领取</button>
+        <span class="fhint" id="zcClaimHint">—</span>
+      </div>
+      <div class="warn-line">领取时网关要解一次人机验证，可能等十几秒到一分钟。期间请勿关闭窗口，完成后账号额度会自动刷新。</div>
+      <div class="tablewrap">
+        <table class="dt"><thead><tr>
+          <th>账号</th><th>可领套餐</th><th>激活上报</th><th>操作</th>
+        </tr></thead><tbody id="zcClaimBody"></tbody></table>
+        <div class="empty" id="zcClaimEmpty">点「预览可领套餐」开始</div>
+      </div>
+      <div id="zcClaimResult"></div>
+    </div>
+    <div class="modal-ft"><span class="fhint" id="zcClaimMsg"></span>
+      <button class="ghost" id="btnZcClaimOk">关闭</button></div>
+  </div>
+</div>
+
+<!-- zcode 账号：导入。上游 POST /import 收的是 JSON body（不是 multipart），
+     所以既能选文件也能直接粘，两条路最后都走 JSON.parse。 -->
+<div class="modal" id="zcImportModal" hidden>
+  <div class="modal-box narrow">
+    <div class="modal-hd"><span>导入账号</span>
+      <button class="ghost" id="btnZcImportClose">关闭</button></div>
+    <div class="modal-bd">
+      <div class="field"><label>账号文件 <span class="opt">选 .json 文件</span></label>
+        <input type="file" id="zcImportFile" accept=".json,application/json"></div>
+      <div class="field"><label>或直接粘贴</label>
+        <textarea id="zcImportText" rows="9" placeholder='{"providers":{"zai":[{"name":"acct-1","mode":"jwt","secret":"…"}]}}'></textarea></div>
+      <div class="fhint">格式与「导出」一致：顶层 <code>providers</code> → 提供方 → 账号数组（含 name / mode / secret）。
+        重复账号由上游自动跳过，不会覆盖已有账号。</div>
+    </div>
+    <div class="modal-ft">
+      <span class="fhint" id="zcImportMsg"></span>
+      <button class="primary" id="btnZcImportDo">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- zcode 网关设置：在 ModelMux 里直接改，不必再去网关自己的面板。
+     两个密钥字段都不回填掩码（留空 = 不改）——上游对含 … 的值会跳过，
+     但「靠上游猜意图」不如前端干脆不发这个字段，省掉「掩码当新值提交」的歧义。
+     后台密码是「一改两处」：网关侧 store 的 admin_key（/admin/api 的鉴权凭据）
+     与本机 config.Claim.AdminKey（内置面板注入 Bearer + 定时领取自报凭据）。
+     所以它不走面板代理，而是走 ModelMux 原生接口 POST /api/channels/admin-key，
+     由服务端一次改到位；只改一边的后果是内置面板整块 401、定时领取静默失效。 -->
+<div class="modal" id="zcSetModal" hidden>
+  <div class="modal-box">
+    <div class="modal-hd"><span>修改网关设置</span>
+      <button class="ghost" id="btnZcSetClose">关闭</button></div>
+    <div class="modal-bd">
+      <div class="row2">
+        <div class="field"><label>新的后台密码 <span class="opt">留空不改</span></label>
+          <input id="zcSetAdminKey" type="password" autocomplete="new-password" placeholder="留空保持现状">
+          <div class="fhint" id="zcSetAdminHint">当前：—</div></div>
+        <div class="field"><label>网关 API Key <span class="opt">留空不改</span></label>
+          <input id="zcSetGwKey" type="password" autocomplete="new-password" placeholder="留空保持现状">
+          <div class="fhint" id="zcSetGwHint">当前：—</div></div>
+      </div>
+      <div class="field"><label>网关当前密码 <span class="opt">仅在提示 401 时填</span></label>
+        <input id="zcSetCurKey" type="password" autocomplete="off" placeholder="网关真正在用的那个密码">
+        <div class="fhint">改密码要用「旧密码」向网关鉴权。如果本机存的那个已经不对（面板整块 401），
+          在这里填上网关真正在用的密码即可复位，保存后两处会重新一致。</div></div>
+      <div class="row2">
+        <div class="field"><label>额度刷新间隔 <span class="opt">秒，0 = 关闭</span></label>
+          <input id="zcSetQuota" type="number" min="0" step="1"></div>
+        <div class="field"><label>单账号并发上限 <span class="opt">0 = 不限</span></label>
+          <input id="zcSetConc" type="number" min="0" step="1"></div>
+      </div>
+      <div class="field"><label>套餐自动领取轮 <span class="opt">秒，0 = 关闭</span></label>
+        <input id="zcSetClaim" type="number" min="0" step="1">
+        <div class="fhint">这是网关侧自己的定时领取。ModelMux 侧的「限时套餐自动领取」是另一处
+          （在「设置」里），两者别设成同一时刻，否则会互相抢额度。</div></div>
+    </div>
+    <div class="modal-ft">
+      <span class="fhint" id="zcSetMsg"></span>
+      <button class="primary" id="btnZcSetSave">保存</button>
+    </div>
   </div>
 </div>
 

@@ -130,6 +130,9 @@ func ApplyPreset(p Preset, name string) config.EmbeddedProvider {
 //
 // 与内嵌型预设的区别：这里预填的是「怎么把子进程拉起来」，而路由字段
 // （模型前缀、声明模型）由用户在面板里补。两种预设都是模板，保存后没有特殊分支。
+//
+// 「托管」现在含两种运行方式（Mode），模板负责预填是哪一种：独立子进程要
+// command/args/port_env_var，进程内原生不要这些、要的是 Mode+Kind。
 type ManagedPreset struct {
 	ID      string   `json:"id"`
 	Label   string   `json:"label"`
@@ -154,6 +157,22 @@ type ManagedPreset struct {
 	// 来自官方公开定价；用户可在渠道设置里覆盖（自购套餐折算价更准）。
 	// 0 = 该平台不以积分计费，无默认值。
 	CreditValue float64 `json:"credit_value,omitempty"`
+
+	// Mode 该模板创建出来的渠道以什么方式运行：空 = 独立子进程；
+	// config.ModeNative = 进程内原生（不需要 command，前端会把 command 留空，
+	// 并把 mode/kind 一起提交，见 web/app.js 的 applyPreset/collectForm）。
+	Mode string `json:"mode,omitempty"`
+	// Kind 原生实现名（internal/native 的注册键），也是网关种类（workbuddy / zcode / trae）。
+	// 只在 Mode= native 时有意义。
+	Kind string `json:"kind,omitempty"`
+
+	// LegacyCommands 仅用于 InferManagedPreset 的锚点匹配，不下发给前端（json:"-"）。
+	//
+	// 为什么需要它：原生型模板没有 command（进程内运行没有可执行文件），可**老配置里
+	// 同名渠道是子进程形态**，command 正是这些值。留着它们，面板才能把老渠道
+	// 正确回显成本模板；否则推断会退化成「自定义托管进程（空白）」，
+	// 用户以为自己的渠道配置丢了。
+	LegacyCommands []string `json:"-"`
 }
 
 // WorkBuddyCreditValue WorkBuddy（腾讯）每积分价值：0.05 元。
@@ -169,13 +188,18 @@ const WorkBuddyCreditValue = 0.05
 // ManagedPresets 托管型模板，按「最容易先跑通」的顺序排列。
 var ManagedPresets = []ManagedPreset{
 	{
-		ID: "workbuddy", Label: "WorkBuddy 网关（wb2api）", Vendor: "WorkBuddy",
-		Command: "wb2api.exe", PortEnvVar: "WB2A_LISTEN",
+		ID: "workbuddy", Label: "WorkBuddy 网关（内置原生）", Vendor: "WorkBuddy",
+		// 内置原生：跑在 ModelMux 进程内，不再需要 wb2api.exe。
+		Mode:       config.ModeNative,
+		Kind:       "workbuddy",
 		HealthPath: "/healthz", PanelPath: "/panel/", ModelPrefix: "wb",
-		CreditValue:  WorkBuddyCreditValue,
-		RouteKeyHint: "填它 config.json 里的 api_key",
-		Note: "把「工作目录」指到 wb2api 所在目录（含 auths 与 config.json）。" +
-			"它会复用该目录的账号，但状态文件建议另指一份，避免与单独运行的实例互相覆盖。",
+		CreditValue:    WorkBuddyCreditValue,
+		RouteKeyHint:   "可留空：内置实现默认不校验本地 Key；填了就会在转发时装进 Authorization",
+		LegacyCommands: []string{"wb2api", "workbuddy2api"},
+		Note: "跑在 ModelMux 进程内，不再需要单独准备 wb2api.exe。" +
+			"把「数据目录」指到你原来 wb2api 的目录（含 auths 与 config.json）即可沿用已登录的账号；" +
+			"留空则用独立的新目录，需要在「控制台」里重新登录。" +
+			"注意它与子进程形态的 workbuddy 渠道是**同一个平台**，不能同时启用，迁移时先删掉旧渠道。",
 	},
 	{
 		ID: "new-api", Label: "new-api（多渠道聚合底座）", Vendor: "new-api",
@@ -221,6 +245,24 @@ var ManagedPresets = []ManagedPreset{
 func ManagedPresetByID(id string) (ManagedPreset, bool) {
 	for _, p := range ManagedPresets {
 		if p.ID == id {
+			return p, true
+		}
+	}
+	return ManagedPreset{}, false
+}
+
+// ManagedPresetByKind 按网关种类（= 原生实现名）查托管型模板。
+//
+// 用途是原生型渠道的模板回显：它没有 command/args 可作推断锚点，而它的 kind
+// 本就是内置实现名、与模板 id 一一对应（workbuddy / zcode / trae），
+// 照着查即可，不必去猜。
+func ManagedPresetByKind(kind string) (ManagedPreset, bool) {
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		return ManagedPreset{}, false
+	}
+	for _, p := range ManagedPresets {
+		if p.ID == kind || (p.Mode == config.ModeNative && p.Kind == kind) {
 			return p, true
 		}
 	}
@@ -279,7 +321,7 @@ func InferManagedPreset(command string, args []string, healthPath, portEnvVar st
 		if sameArgs(p.Args, args) {
 			score += 2
 		}
-		if normalizeCommand(p.Command) == wantCmd {
+		if presetCommandMatch(p, wantCmd) {
 			score += 2
 		}
 
@@ -297,6 +339,31 @@ func InferManagedPreset(command string, args []string, healthPath, portEnvVar st
 		return ""
 	}
 	return bestID
+}
+
+// presetCommandMatch 该模板是否「认」这个启动命令。
+//
+// 除了模板自己的 command，还要看 LegacyCommands：原生型模板没有 command
+// （进程内运行没有可执行文件），但它的**前身**正是老配置里的子进程形态，
+// 那些渠道的 command 是 wb2api.exe 这类值。少了这一步，老渠道的模板回显会
+// 退化成「自定义托管进程（空白）」，用户会以为自己填的东西丢了。
+//
+// 空 command 单独处理，且**只**认「从不需要 command」的模板（即自定义托管进程）。
+// 带 LegacyCommands 的模板对应的是「曾经有 command」的形态，让空值命中它会把
+// 一个空白渠道显示成某个具体网关——那正是要修的 bug 的镜像。
+func presetCommandMatch(p ManagedPreset, wantCmd string) bool {
+	if wantCmd == "" {
+		return normalizeCommand(p.Command) == "" && len(p.LegacyCommands) == 0
+	}
+	if normalizeCommand(p.Command) == wantCmd {
+		return true
+	}
+	for _, c := range p.LegacyCommands {
+		if normalizeCommand(c) == wantCmd {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeCommand 把一条启动命令归一化成可比较的短名。

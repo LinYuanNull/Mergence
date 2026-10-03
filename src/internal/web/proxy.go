@@ -10,9 +10,14 @@
 //
 // 边界：只代理「托管型且已就绪」的渠道；这是管理通道不是通用代理——
 // 上游地址由服务端配置决定，客户端无法用它访问任意主机。
+//
+// 方法覆盖：GET/POST/PUT/DELETE 一律透传。写操作曾经被禁（zcode 只放 GET），
+// 那是「账号面板留在网关自己的 UI 里」时代的口径；面板整块搬进 ModelMux 后
+// 已撤掉，理由见 handleChannelUpstream 里的注释。
 package web
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -23,11 +28,38 @@ import (
 	"modelmux/internal/provider"
 )
 
-// upstreamProxyTimeout 管理类请求的上限。
+// upstreamProxyTimeout 只读管理请求的上限。
 //
 // 账号列表、启停这类都是轻请求；个别操作（如余额刷新）上游可能要逐账号
 // 回源查询，给 30s 但不无限等——面板 UI 还等着渲染。
 const upstreamProxyTimeout = 30 * time.Second
+
+// upstreamProxyWriteTimeout 一般写操作的上限。
+//
+// 增删改账号、导入导出、发起设备码登录都是「上游一次往返 + 落盘」，
+// 比只读查询慢，但远不到分钟级。给 120s。
+const upstreamProxyWriteTimeout = 120 * time.Second
+
+// upstreamProxyClaimTimeout 领取套餐的上限，比一般写操作宽得多。
+//
+// 领取前上游要解一次人机验证（自带 Node 求解器要拉浏览器、加载页面），
+// 实测可长达数十秒；再叠加激活上报与领取后的额度刷新。给 300s——
+// 这是唯一一个「等一分钟是正常的」接口，用 120s 会把它误杀成超时。
+const upstreamProxyClaimTimeout = 300 * time.Second
+
+// proxyTimeoutFor 按方法与路径选择上游等待上限。
+//
+// 领取单独放宽的原因见 upstreamProxyClaimTimeout；其余 GET/HEAD 走只读上限，
+// 非只读走写上限。
+func proxyTimeoutFor(method, rest string) time.Duration {
+	if strings.HasPrefix(strings.TrimLeft(rest, "/"), "claim") {
+		return upstreamProxyClaimTimeout
+	}
+	if method == http.MethodGet || method == http.MethodHead {
+		return upstreamProxyTimeout
+	}
+	return upstreamProxyWriteTimeout
+}
 
 // handleChannelUpstream 转发 /api/channels/{name}/upstream/{path...}
 // 到 <子进程根地址><panel_api_prefix>/<path>。
@@ -45,9 +77,12 @@ func (s *Server) handleChannelUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	up := ch.Upstream()
-	if up.Source != "managed" {
+	// 判据是 Hosted（托管型子进程 or 进程内原生），不是「是不是子进程」：
+	// 原生型跑的虽然在本进程内，但它同样自带 /panel/api/* 管理 API，
+	// 而且是它**唯一**的管理入口 —— 挡掉它就等于原生渠道没有账号面板。
+	if !up.Source.Hosted() {
 		writeJSONStatus(w, http.StatusNotImplemented, map[string]any{
-			"error": "内嵌型渠道跑在本进程内，没有独立的管理 API",
+			"error": "内嵌型渠道只是通用 HTTP 转发，没有独立的管理 API",
 			"code":  "not_managed",
 		})
 		return
@@ -67,16 +102,17 @@ func (s *Server) handleChannelUpstream(w http.ResponseWriter, r *http.Request) {
 
 	kind := kindOfUpstream(up)
 
-	// zcode 系列只开放只读代理。用户要的是「查看」——账号、监控、设置这些
-	// 只读视图；增删账号、改设置、领取这类写操作留在网关自己的面板里，
-	// 代理层不开写口子。
-	// 注意：「限时套餐自动领取」不受这条限制影响——它走 claim_api.go 自己的
-	// 客户端，不经过这里。
-	if kind == "zcode" && r.Method != http.MethodGet {
-		writeJSONStatus(w, http.StatusMethodNotAllowed, map[string]any{
-			"error": "该网关的面板代理只开放只读请求"})
-		return
-	}
+	// zcode 的管理代理 GET/POST/PUT/DELETE 全开放。
+	//
+	// 历史上这里只放 GET，理由是「写操作留在网关自己的面板里」。但账号面板
+	// 整块搬进 ModelMux 之后，那个口径就成了半成品：面板上有按钮、点下去 405。
+	// 所以按需求撤掉这道限制。
+	//
+	// 安全性没有靠「只读」来兜底，靠的是另外两条一直没变的前提：
+	//   ① 上游地址取自服务端配置，客户端无法借这个代理访问任意主机；
+	//   ② 后台密码由本进程注入（见 panelAuthKey），浏览器全程不接触明文。
+	// 仍然保留的边界：内嵌型渠道不走这里、停用/未就绪渠道在更上面就被挡掉。
+	// 注意：「限时套餐自动领取」仍走 claim_api.go 自己的客户端，不经过这里。
 
 	// 管理通道的凭据来源与转发通道不同：zcode 用后台密码，其它网关用渠道
 	// route 的 Key。来源错了会拿到 401（而不是「功能没实现」），容易误判成
@@ -97,13 +133,30 @@ func (s *Server) handleChannelUpstream(w http.ResponseWriter, r *http.Request) {
 	target := root + prefix + "/" + strings.TrimLeft(rest, "/")
 
 	ctx := r.Context()
-	if dl, ok := ctx.Deadline(); !ok || time.Until(dl) > upstreamProxyTimeout {
+	limit := proxyTimeoutFor(r.Method, rest)
+	if dl, ok := ctx.Deadline(); !ok || time.Until(dl) > limit {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, upstreamProxyTimeout)
+		ctx, cancel = context.WithTimeout(ctx, limit)
 		defer cancel()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, r.Method, target, r.Body)
+	// 写请求的 body 先整块读进内存再转发。
+	//
+	// 把 r.Body 直接交给 http.Client 时会以 chunked 发送（ContentLength 未知），
+	// 而这里要 POST/PUT 的 body 都是小 JSON（导入的账号文件也在 KB 级），
+	// 定长发送对上游更友好，也让 8MB 上限有个明确落点。只读请求没有 body。
+	var payload io.Reader
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		buf, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		if err != nil {
+			writeJSONStatus(w, http.StatusBadRequest,
+				map[string]any{"error": "读取请求体失败：" + err.Error()})
+			return
+		}
+		payload = bytes.NewReader(buf)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, r.Method, target, payload)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadGateway,
 			map[string]any{"error": "构造上游请求失败：" + err.Error()})
@@ -144,7 +197,7 @@ func (s *Server) handleChannelUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadGateway,
 			map[string]any{"error": "读取上游响应失败：" + err.Error()})
@@ -156,7 +209,7 @@ func (s *Server) handleChannelUpstream(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", ct)
 	w.WriteHeader(resp.StatusCode)
-	_, _ = w.Write(body)
+	_, _ = w.Write(respBody)
 }
 
 // upstreamClient 管理代理专用的 HTTP 客户端。

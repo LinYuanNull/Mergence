@@ -1,10 +1,16 @@
 // upstream.go 可路由上游的统一形状。
 //
-// 内嵌型（ModelMux 进程内直连一个 OpenAI 兼容端点）与托管型（ModelMux 拉起的
-// 独立子进程）在这里归一成同一个形状。于是路由、多 Key 池、协议适配、模型聚合、
-// 连接测试、额度查询全都只有一份实现。
+// 三种来源在这里归一成同一个形状：
 //
-// 这是「不让 WorkBuddy / new-api 的源码搬进来」的前提：它们本来就是独立可用的
+//	内嵌型 embedded —— ModelMux 进程内直连一个 OpenAI 兼容端点（纯转发）
+//	托管型 managed  —— ModelMux 拉起的独立子进程
+//	原生型 native   —— ModelMux 在本进程内装配上游实现并服务（见 internal/native）
+//
+// 后两者都跑在本机回环上、都自带管理面，只差「谁提供服务」——那是编排层的事，
+// 到了这一层已经看不出区别（见 Source.Hosted）。于是路由、多 Key 池、协议适配、
+// 模型聚合、连接测试、额度查询全都只有一份实现。
+//
+// 这是「不让 WorkBuddy / new-api 的源码被改写成库」的前提：它们本来就是独立可用的
 // OpenAI 兼容服务，ModelMux 只需要知道「叫什么、前缀是什么、怎么鉴权」。
 package provider
 
@@ -31,9 +37,45 @@ type Source string
 const (
 	// SourceEmbedded 内嵌型：ModelMux 直接向上游发请求。
 	SourceEmbedded Source = "embedded"
-	// SourceManaged 托管型：上游是 ModelMux 拉起的子进程。
+	// SourceManaged 托管型：上游是 ModelMux 拉起的独立子进程。
 	SourceManaged Source = "managed"
+	// SourceNative 原生型：上游由 ModelMux **在本进程内**装配并服务。
+	//
+	// 对外它仍然是一个回环 HTTP 端点（见 internal/native），所以与托管型相比
+	// 只差「谁提供服务」这一件事，而这件事完全由编排层吸收：两者都给得出
+	// RootURL、管理 API 前缀与就绪状态。因此管理代理、领取执行器、用量采集、
+	// 控制台探测对它们一视同仁——判据是 Hosted()，不是 == SourceManaged。
+	SourceNative Source = "native"
 )
+
+// Hosted 该来源是否由 ModelMux 提供、跑在本机回环上、且自带管理面。
+//
+// 托管型（子进程）与原生型（进程内）都满足；内嵌型只是通用 HTTP 转发，
+// 没有独立的管理 API，也没法在服务端注入凭据。
+//
+// 四条接缝一律用这个判据而不是 `== SourceManaged`：否则每加一种形态都要
+// 去四个文件里追一遍，而漏掉任何一处都是静默的功能缺失（面板入口空、
+// 领取不执行、用量采不到），不是报错。
+func (s Source) Hosted() bool { return s == SourceManaged || s == SourceNative }
+
+// Family 把来源归一成**对外的**两类：内嵌型 / 托管型。
+//
+// 为什么对外只认两类：面板与客户端真正要判的是「这是 ModelMux 托管的一个平台
+// （积分型、账号在控制台里管），还是用户自己填的一个 API 端点」，而**不是**
+// 「上游跑在子进程里还是本进程里」——后者是实现细节，连渠道配置都能在两种形态
+// 之间切换而其余字段一个不动。
+//
+// 另一半原因是硬约束而非审美：上游控制台那套前端（web/upstream.js）按两值
+// 写死了 `source === 'managed'`。多暴露一个 native 会让它把原生渠道判成 API 型，
+// 一次性少掉账号池 / 模型档位 / 用量 / 配置 / 日志五个视图 —— 而 W2 的验收
+// 标准正是「upstream.js 字节级零改动」。要区分「进程内还是子进程」时，
+// 用 Upstream.Source 本身（Go 侧），别扩这个对外值域。
+func (s Source) Family() Source {
+	if s == SourceNative {
+		return SourceManaged
+	}
+	return s
+}
 
 // Upstream 一个可路由的上游端点。
 type Upstream struct {
@@ -129,8 +171,11 @@ func FromEmbedded(c config.EmbeddedProvider) Upstream {
 
 // FromManaged 把托管型配置 + 运行状态转成统一形状。
 //
-// status 为 nil 表示子进程当前没有可用实例（未启用或启动失败）——此时上游仍然
+// status 为 nil 表示当前没有可用实例（未启用或启动失败）——此时上游仍然
 // 会被构造出来（面板要显示它），但 IsReady() 为 false，路由会跳过它并给出明确原因。
+//
+// 配置里的 Mode 决定来源标成 managed（子进程）还是 native（进程内）。两者在
+// 本函数之后就没有分叉点了：都带 RootURL / PanelAPIPrefix / 就绪闭包。
 func FromManaged(c config.ManagedProvider, baseURL string, ready bool, lastErr string) Upstream {
 	r := c.Route
 	if r == nil {
@@ -146,7 +191,7 @@ func FromManaged(c config.ManagedProvider, baseURL string, ready bool, lastErr s
 	root := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 
 	u := Upstream{
-		Name: c.Name, DisplayName: c.DisplayName, Source: SourceManaged,
+		Name: c.Name, DisplayName: c.DisplayName, Source: sourceOfManaged(c),
 		Enabled: c.Enabled, BaseURL: root + apiPrefix,
 		Protocol:    config.NormalizeProtocolName(r.Protocol),
 		ModelPrefix: r.ModelPrefix, Models: r.Models,
@@ -176,10 +221,25 @@ func FromManaged(c config.ManagedProvider, baseURL string, ready bool, lastErr s
 			if lastErr != "" {
 				return lastErr
 			}
-			return "子进程未就绪"
+			// 「本地服务」而不是「子进程」：原生型跑在本进程内，说成子进程会
+			// 让人去找一个根本不存在的进程。
+			return "本地服务未就绪"
 		}
 	}
 	return u
+}
+
+// sourceOfManaged 把配置里的运行方式映射成渠道来源。
+//
+// 只认显式的 Mode：`kind` / `preset` 都不参与判断。它们标记的是「这是哪个网关」，
+// 与「这个网关以什么方式跑」是两件事——老配置里的 workbuddy 渠道 kind 同样是
+// workbuddy，但它是子进程形态，按 kind 判来源会把它当场改成进程内，
+// 直接丢掉用户已登录的账号。
+func sourceOfManaged(c config.ManagedProvider) Source {
+	if c.Native() {
+		return SourceNative
+	}
+	return SourceManaged
 }
 
 // signature 计算「影响路由的字段」的指纹。

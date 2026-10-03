@@ -92,7 +92,7 @@ func (s *Server) pickClaimChannel(cfg config.ClaimConfig) (*provider.Channel, er
 	}
 	var cands []*provider.Channel
 	for _, c := range chans {
-		if c.Source() != provider.SourceManaged || !c.Ready() {
+		if !c.Source().Hosted() || !c.Ready() {
 			continue
 		}
 		if kindOfUpstream(c.Upstream()) == "zcode" {

@@ -254,6 +254,9 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("/api/channels/raw", s.handleChannelRaw)
 	mux.HandleFunc("/api/channels/test", s.handleChannelTest)
 	mux.HandleFunc("/api/channels/models", s.handleChannelModels)
+	// 网关后台密码改一次要落两处（网关侧 + 本机 Claim.AdminKey），
+	// 所以单独一个原生接口，不让前端绕过面板代理自己拼。
+	mux.HandleFunc("POST /api/channels/admin-key", s.handleChannelAdminKey)
 	// 托管型上游的管理 API 代理：账号列表/启停/签到等内置进主窗口的关键。
 	// {path...} 是 Go 1.22 ServeMux 的通配语法，把剩余路径原样交给代理；
 	// 单独注册子树模式会与它 panic 冲突（两者匹配同一前缀）。

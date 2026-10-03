@@ -62,6 +62,29 @@ function upPost(path, body, timeout) {
   });
 }
 
+function upPut(path, body, timeout) {
+  return upApi(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body === undefined ? {} : body),
+    timeout: timeout || 30000,
+  });
+}
+
+/* upDelete 带 body 的 DELETE。
+ *
+ * 上游 zcode2api 的 DELETE /accounts 收的是 JSON 数组 body（要删的 id 列表），
+ * 不是 query 参数——所以不能退化成无 body 的 del()，那样上游拿不到 id，
+ * 会安静地一个都不删（返回 deleted:0），看起来像「删了但没生效」。 */
+function upDelete(path, body, timeout) {
+  return upApi(path, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body === undefined ? {} : body),
+    timeout: timeout || 30000,
+  });
+}
+
 /* 需要先选中托管渠道的视图调用 */
 function requireChan() {
   if (UP.chan) return true;

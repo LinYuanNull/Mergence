@@ -361,8 +361,19 @@ def main():
         js("setView('up-zc-settings')")
         time.sleep(3.0)
         st = js("document.getElementById('zcSetBody').textContent") or ""
-        check("网关设置渲染出只读字段", "后台密码" in st and "刷新间隔" in st, st[:140])
+        check("网关设置渲染出后台密码与刷新间隔", "后台密码" in st and "刷新间隔" in st, st[:140])
         check("设置页明确标注掩码值（不是明文）", "掩码" in st, st[:140])
+        # 设置已从「只读视图」改成可在本面板直接修改：入口按钮与弹窗都必须在，
+        # 且页面不能再出现把人引回「网关自己的面板」的旧文案。
+        check("网关设置已是可写视图（有「修改设置」按钮、无只读旧文案）",
+              bool(js("!!document.getElementById('btnZcSetEdit')"))
+              and "只读视图" not in st and "请去网关自己的面板" not in st, st[:140])
+        js("document.getElementById('btnZcSetEdit').click()")
+        time.sleep(0.8)
+        check("「修改设置」打开弹窗，密码框是掩码输入",
+              (not js("document.getElementById('zcSetModal').hidden"))
+              and js("document.getElementById('zcSetAdminKey').type") == "password", "")
+        js("document.getElementById('btnZcSetClose').click()")
         errs = js("window.__errs") or []
         check("全程无 JS 运行时错误", not errs, str(errs)[:300])
 

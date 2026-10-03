@@ -2,9 +2,14 @@ module modelmux
 
 go 1.25.13
 
-require github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
+require (
+	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
+	github.com/redis/go-redis/v9 v9.22.0
+)
 
 require (
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
-	golang.org/x/sys v0.0.0-20210218145245-beda7e5e158e // indirect
+	go.uber.org/atomic v1.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 )

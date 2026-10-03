@@ -134,7 +134,7 @@ func (c *Channel) Prefix() string { return c.up.ModelPrefix }
 // Protocol 上游协议。
 func (c *Channel) Protocol() string { return c.up.Protocol }
 
-// Source 来源（内嵌 / 托管）。
+// Source 来源（内嵌 / 托管 / 原生）。
 func (c *Channel) Source() Source { return c.up.Source }
 
 // Ready 当前是否可用于转发。
@@ -323,7 +323,9 @@ func (c *Channel) Status() ChannelStatus {
 
 	st.Name = c.up.Name
 	st.DisplayName = c.up.DisplayName
-	st.Source = c.up.Source
+	// Family()：对外只暴露 内嵌/托管 两类。原生型对面板而言就是「被托管的平台」，
+	// 详细理由见 Provider.Source.Family（关键是 web/upstream.js 按两值写死）。
+	st.Source = c.up.Source.Family()
 	st.Enabled = c.up.Enabled
 	st.Ready = c.up.IsReady()
 	if !st.Ready {
@@ -478,7 +480,9 @@ func displayModel(m config.ChannelModel) config.ChannelModel {
 // /admin/api 且签名完全不同），而渠道配置里连创建时用的模板都可能没记。
 // 与其猜名字，不如直接问「集成面板要用的那个接口在不在」。
 func (c *Channel) ProbeConsole() {
-	if c.up.Source != SourceManaged {
+	// 判据是「由 ModelMux 提供、自带管理面」而不是「是子进程」：原生型跑在
+	// 本进程内，但它同样有 /panel/api/*，同样需要被探出 ConsoleGateway。
+	if !c.up.Source.Hosted() {
 		return
 	}
 	c.mu.Lock()

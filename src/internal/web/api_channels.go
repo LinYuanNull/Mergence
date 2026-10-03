@@ -13,6 +13,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -116,6 +117,9 @@ type channelInput struct {
 	Price config.ChannelPrice `json:"price"`
 
 	// ── 托管型专有
+	// Mode 运行方式：空 / "process" = 独立子进程；"native" = 进程内原生。
+	// 老配置没有这个字段 ⇒ 空值必须解释成子进程，见 config.ManagedProvider.Mode。
+	Mode          string   `json:"mode,omitempty"`
 	Command       string   `json:"command"`
 	Args          []string `json:"args"`
 	Dir           string   `json:"dir"`
@@ -169,7 +173,9 @@ func (in *channelInput) toManaged() config.ManagedProvider {
 		// 靠推断。与 toEmbedded 的处理保持一致。
 		Preset: in.Preset,
 		// GatewayKind 落盘识别结果，供后续判重与面板代理使用。
-		Kind:    in.GatewayKind,
+		Kind: in.GatewayKind,
+		// Mode 决定它是子进程还是进程内原生；空值即子进程（见 config 的同名字段）。
+		Mode:    in.Mode,
 		Command: in.Command, Args: in.Args, Dir: in.Dir, DataDir: in.DataDir,
 		PortEnvVar: in.PortEnvVar, FixedPort: in.FixedPort,
 		HealthPath: in.HealthPath, ReadyTimeout: in.ReadyTimeout,
@@ -559,6 +565,123 @@ func (s *Server) handleChannelAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "channels": s.channelStatuses()})
 }
 
+// handleChannelAdminKey 改托管网关的后台密码，并把同一个值同步到 ModelMux 侧。
+//
+// 为什么必须由本进程代写，而不让前端直接打面板代理的 PUT /settings：
+// 这个密码在两侧各存一份，而且两侧都真的在用——
+//
+//	网关侧  store 里的 admin_key：/admin/api/* 的鉴权凭据
+//	本机侧  config.Claim.AdminKey：proxy.go 的 panelAuthKey 给内置面板注入
+//	         Bearer，外加 claim 调度器定时领取时自报凭据
+//
+// 只改一边的后果是确定的故障（内置面板整块 401、定时领取静默失效），所以这里
+// 把「改两处」做成一次调用，顺序固定为「先网关、后本机」：网关会校验新值
+// （空值被它挡掉），它先失败就什么都不必动；本机落盘走的是与其他设置一致的
+// 「Parse 校验 → 原子落盘 → 重载」管道，几乎不会失败，万一失败也会把
+// 「网关已改、本机还是旧值」明写进错误里，让人知道该补哪一边，
+// 而不是留一个静默的半成品。
+//
+// current_key 是给「两侧已经分叉」准备的：网关的 PUT /settings 要拿**旧密码**
+// 鉴权，若本机存的那个值已经不对（面板正报 401），再用本机的值去改必然还是
+// 401——这时让用户把网关真正在用的密码传进来即可复位。留空则用本机存的值。
+func (s *Server) handleChannelAdminKey(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name       string `json:"name"`
+		AdminKey   string `json:"admin_key"`
+		CurrentKey string `json:"current_key"`
+	}
+	if err := readJSONBody(r, 8<<10, &in); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	newKey := strings.TrimSpace(in.AdminKey)
+	if newKey == "" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "新的后台密码不能为空"})
+		return
+	}
+	name := strings.TrimSpace(in.Name)
+	ch, ok := s.reg.ByName(name)
+	if !ok {
+		writeJSONStatus(w, http.StatusNotFound, map[string]any{"error": "渠道不存在：" + name})
+		return
+	}
+	up := ch.Upstream()
+	if up.Source != "managed" {
+		writeJSONStatus(w, http.StatusNotImplemented, map[string]any{
+			"error": "内嵌型渠道没有独立的网关设置", "code": "not_managed"})
+		return
+	}
+	if !up.Enabled || !ch.Ready() {
+		reason := ch.Status().ReadyReason
+		if reason == "" {
+			reason = "子进程未运行"
+		}
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{
+			"error": "网关未就绪，改不了它的密码（" + reason + "）", "code": "channel_not_ready"})
+		return
+	}
+
+	root := strings.TrimRight(up.RootURL, "/")
+	prefix := strings.TrimRight(panelAPIPrefixFor(kindOfUpstream(up), up.PanelAPIPrefix), "/")
+	if root == "" || prefix == "" {
+		writeJSONStatus(w, http.StatusBadGateway,
+			map[string]any{"error": "不知道网关地址，改不了它的密码"})
+		return
+	}
+	oldKey := strings.TrimSpace(in.CurrentKey)
+	if oldKey == "" {
+		oldKey = s.panelAuthKey(up) // 本机存的旧值
+	}
+
+	body, err := json.Marshal(map[string]string{"admin_key": newKey})
+	if err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), proxyTimeoutFor(http.MethodPut, "settings"))
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, root+prefix+"/settings", bytes.NewReader(body))
+	if err != nil {
+		writeJSONStatus(w, http.StatusBadGateway,
+			map[string]any{"error": "构造上游请求失败：" + err.Error()})
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if oldKey != "" {
+		req.Header.Set("Authorization", "Bearer "+oldKey)
+	}
+
+	resp, err := upstreamClient.Do(req)
+	if err != nil {
+		writeJSONStatus(w, http.StatusBadGateway, map[string]any{
+			"error": "改网关密码失败（请求未送达）：" + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(raw))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			msg = "网关不认这个旧密码，请在「当前后台密码」里填网关真正在用的那个。原始返回：" + msg
+		}
+		writeJSONStatus(w, http.StatusBadGateway, map[string]any{
+			"error": "改网关密码失败：" + msg, "upstream_status": resp.StatusCode})
+		return
+	}
+
+	// 网关已改，接着把同一个值写进本机配置。
+	if _, _, err := s.saveConfig(func(c *config.Config) { c.Claim.AdminKey = newKey }); err != nil {
+		writeJSONStatus(w, http.StatusBadGateway, map[string]any{
+			"error": "网关密码已改成新值，但写入本机配置失败：" + err.Error() +
+				"；请到「设置 → 限时套餐自动领取」再填一次同一个密码",
+			"upstream_changed": true, "code": "partial"})
+		return
+	}
+	// 日志只说改了哪条渠道：密码属于凭据，不落日志。
+	s.lg.Info("网关后台密码已修改，两处同步一致", "channel", up.Name)
+	writeJSON(w, map[string]any{"ok": true, "synced": []string{"gateway", "modelmux"}})
+}
+
 // channelStatuses 渠道状态，外加面板要用的补充字段。
 //
 // 补的是「每积分价值」：渠道级常量，用量视图的「实际花费估算」卡与
@@ -575,7 +698,9 @@ func (s *Server) channelStatuses() []provider.ChannelStatus {
 	}
 	for i := range list {
 		up, ok := ups[list[i].Name]
-		if !ok || up.Source != provider.SourceManaged {
+		// Hosted（托管型子进程 or 进程内原生）：两者都有管理面与积分口径，
+		// 都要补「每积分价值」并按 kind 覆盖控制台形态。
+		if !ok || !up.Source.Hosted() {
 			continue
 		}
 		kind := kindOfUpstream(up)
@@ -630,6 +755,10 @@ func (s *Server) handleChannelRaw(w http.ResponseWriter, r *http.Request) {
 		out := channelInput{
 			Kind: kindManaged, Name: m.Name, DisplayName: m.DisplayName,
 			Enabled: m.Enabled, Preset: m.Preset,
+			// Mode 必须回显：前端保存时原样带回来。不回显的话，任何一次编辑都会
+			// 把 mode 清成空值 —— 而空值等于子进程，于是一个原生渠道会被
+			// 「编辑一下」就变成去拉起一个不存在的可执行文件。
+			Mode: m.Mode,
 			// 回显已识别的网关种类：前端保存时会把它带回来。不回显的话，
 			// 任何一次编辑都会把 kind 清空，唯一性校验随即失效。
 			GatewayKind: gatewayKindOf(*m),
@@ -644,7 +773,14 @@ func (s *Server) handleChannelRaw(w http.ResponseWriter, r *http.Request) {
 		// 第一个选项——于是 zcode 渠道被显示成 workbuddy。这里按当前的
 		// command/args/health_path 推断一次兜底，并标记这是推断值而非记录值。
 		if out.Preset == "" {
-			if inferred := provider.InferManagedPreset(
+			// 原生型没有 command 可当锚点，InferManagedPreset 只会落到
+			// 「自定义托管进程（空白）」上。它的 kind 就是内置实现名，也正是
+			// 预设 id（workbuddy / zcode / trae），直接照着找，别去猜。
+			if m.Native() {
+				if p, ok := provider.ManagedPresetByKind(m.Kind); ok {
+					out.Preset, out.PresetInferred = p.ID, true
+				}
+			} else if inferred := provider.InferManagedPreset(
 				m.Command, m.Args, m.HealthPath, m.PortEnvVar); inferred != "" {
 				out.Preset = inferred
 				out.PresetInferred = true

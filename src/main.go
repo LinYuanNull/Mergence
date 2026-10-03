@@ -31,6 +31,14 @@ import (
 	"modelmux/internal/orchestrator"
 	"modelmux/internal/provider"
 	"modelmux/internal/web"
+
+	// 原生实现注册：空白导入即把 kind=workbuddy 的实现装进 internal/native 的
+	// 注册表，编排器在 mode=native 的渠道上按 kind 取到它。
+	//
+	// 为什么放在 main 而不是 orchestrator 里：编排器只需要知道「有个 kind 要装配」，
+	// 不该依赖具体上游（它要能同时装 workbuddy / zcode / trae，而这些只有 main
+	// 知道这一版带了哪些）。装配点集中在这里，加一个原生实现就是加一行导入。
+	_ "modelmux/internal/native/workbuddy"
 )
 
 const appTitle = "ModelMux"

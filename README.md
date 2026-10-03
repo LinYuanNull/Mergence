@@ -120,6 +120,8 @@ modelmux/
 
 1. **对外契约只有一份**——OpenAI Chat Completions。任何上游的协议差异都在 `src/internal/provider` 的适配层吸收，不对外暴露第二套格式。
 2. **不 `import` AGPL 代码**。AGPL 项目只允许**进程级**调用：它是独立子进程，不构成衍生作品。
+   MIT 上游则可以**照搬源码内嵌**（须保留其版权声明，许可原文集中放在 `src/THIRD-PARTY-LICENSES/`），
+   照搬来的那部分不改变本项目自身的 MIT。
 3. **不随包分发第三方二进制**。托管型 provider 由用户自行获取，本项目不分发。
 
 配套的工程约定：
@@ -137,7 +139,7 @@ modelmux/
 | 类型 | 配置键 | 运行形态 |
 |---|---|---|
 | **内嵌型** | `embedded_providers` | 跑在网关进程内。自定义 OpenAI 兼容端点，或选用内置预设（见下一节）。支持多 Key 轮询、权重、模型前缀。 |
-| **托管型** | `managed_providers` | 独立子进程。由编排器动态分配端口、注入环境变量、探活、断线重拉、退出时按树杀干净。 |
+| **托管型** | `managed_providers` | 由 ModelMux 托管：进程内原生（内置实现，不起外部进程）或独立子进程（动态分配端口、注入环境变量、探活、按树杀干净）。由 `mode` 字段决定。 |
 
 托管型渠道的管理面板由网关**反向代理**到面板里，`Authorization` 由服务端注入——
 面板侧不接触上游密钥。
@@ -147,18 +149,27 @@ modelmux/
 预设只是**预填了一组字段的模板**：选中后每一项都能改，保存后就是一个普通渠道，
 不参与路由 / 额度 / 日志里的任何特殊分支。
 
-### 托管型预设（拉起独立子进程）
+### 托管型预设
 
-| 预设 | 项目 | 说明 | 许可 |
-|---|---|---|---|
-| `workbuddy` | **[WorkBuddy 2 API](https://github.com/Thelatter666/workbuddy2api)**（wb2api） | 把 CodeBuddy 账号变成 OpenAI 兼容接口的多账号网关：OAuth 登录、账号池三因子加权轮转、分级熔断与冷却、会话粘性。启动命令 `wb2api.exe`，端口环境变量 `WB2A_LISTEN`。 | MIT |
-| `zcode` | **[zcode2api](https://github.com/dengyie/zcode2api)** | ZCode 账号运营 + 双协议网关一体机：账号池轮询、额度监控、限时套餐领取，同时对外提供 Anthropic Messages 与 OpenAI Chat Completions。Python 项目，启动命令 `python cli.py serve`，端口环境变量 `ZCODE_PORT`。 | AGPL-3.0 |
-| `new-api` | **[new-api](https://github.com/QuantumNous/new-api)** | 多渠道聚合与分发底座。启动命令 `new-api.exe`，端口环境变量 `PORT`。 | AGPL-3.0 |
-| `trae` | **[Trae](https://www.trae.ai)** 本地网关 | 把 Trae IDE 的模型能力暴露成本地 OpenAI 兼容端点。启动命令 `node server.js`；具体网关实现由使用者自行选择。 | 随所选项目 |
-| `custom-managed` | 自定义进程 | 任何能用环境变量指定端口、且暴露 OpenAI 兼容端点的可执行程序。 | — |
+托管型渠道有**两种运行方式**，由渠道的 `mode` 决定，模板会替你选好：
 
-> `workbuddy` 预设指向的是派生副本。它的原项目 `Sliverkiss/workbuddy2api` 仓库已不可访问，
-> 链接给出的是仍在维护的那一份（两者的 MIT 版权声明与 NOTICE 一并在仓库内保留）。
+- **进程内原生**（`mode=native`）：ModelMux 自己装配内置实现，在本进程内起一个只绑 `127.0.0.1`
+  的服务。**不需要任何外部可执行文件**，面板与控制台都照常使用。
+- **独立子进程**（`mode=process`，缺省）：编排器动态分配端口、注入环境变量、探活、退出时按树杀干净。
+  升级前的配置没有 `mode` 字段，一律按子进程解释，行为与旧版完全一致。
+
+| 预设 | 项目 | 运行方式 | 说明 | 许可 |
+|---|---|---|---|---|
+| `workbuddy` | **[WorkBuddy 2 API](https://github.com/linguo2625469/workbuddy2api-panel)** | **进程内原生** | 把 CodeBuddy 账号变成 OpenAI 兼容接口的多账号网关：OAuth 登录、账号池三因子加权轮转、分级熔断与冷却、会话粘性。**已内置**，不需要 `wb2api.exe`；把「数据目录」指到原 wb2api 目录即可沿用已登录的账号。 | MIT |
+| `zcode` | **[zcode2api](https://github.com/dengyie/zcode2api)** | 独立子进程 | ZCode 账号运营 + 双协议网关一体机：账号池轮询、额度监控、限时套餐领取，同时对外提供 Anthropic Messages 与 OpenAI Chat Completions。Python 项目，启动命令 `python cli.py serve`，端口环境变量 `ZCODE_PORT`。 | AGPL-3.0 |
+| `new-api` | **[new-api](https://github.com/QuantumNous/new-api)** | 独立子进程 | 多渠道聚合与分发底座。启动命令 `new-api.exe`，端口环境变量 `PORT`。 | AGPL-3.0 |
+| `trae` | **[Trae](https://www.trae.ai)** 本地网关 | 独立子进程 | 把 Trae IDE 的模型能力暴露成本地 OpenAI 兼容端点。启动命令 `node server.js`；具体网关实现由使用者自行选择。 | 随所选项目 |
+| `custom-managed` | 自定义进程 | 独立子进程 | 任何能用环境变量指定端口、且暴露 OpenAI 兼容端点的可执行程序。 | — |
+
+> `workbuddy` 是**照搬上游 MIT 源码**内嵌的实现（上游文件头与版权声明逐字保留），
+> 许可原文见 [`src/THIRD-PARTY-LICENSES/`](src/THIRD-PARTY-LICENSES/)。
+> 表中其余项目都是**独立程序，由使用者自行获取与部署**：ModelMux **不包含也不分发**它们的二进制，
+> AGPL 项目仅以独立进程方式调用、不构成衍生作品。
 
 ### 内嵌型预设（进程内转发）
 
@@ -178,9 +189,14 @@ modelmux/
 上表里只有 `anthropic` 一家协议不同：上游说 Anthropic Messages，由适配层转成 OpenAI 格式对外。
 `openai` 的部分新模型只在新版 Responses 协议下可用，需要时可在渠道里改选协议。
 
-托管型预设对应的都是**独立项目，由使用者自行获取与部署**。ModelMux 只把已存在于本机的
-程序作为子进程拉起，**不包含也不分发**这些程序的二进制，也不代其上游服务授予任何权利。
-AGPL 项目仅以独立进程方式调用，不构成衍生作品；各项目自身的免责声明同样适用。
+托管型渠道有三种来源方式，与许可无关、只取决于上游的获取成本：
+
+- **MIT 上游照搬源码内嵌**（如 `workbuddy`）：逐字保留上游文件头与版权声明，许可原文集中放在
+  [`src/THIRD-PARTY-LICENSES/`](src/THIRD-PARTY-LICENSES/)，照搬部分不改变本项目自身的 MIT。
+- **自己独立重写**（规划中的 `zcode`）：仓库里不含任何上游代码，可内嵌。
+- **AGPL 上游仅进程级调用**（当前的 `zcode2api`、`new-api`）：ModelMux 只把已存在于本机的程序
+  作为子进程拉起，**不包含也不分发**其二进制，也不代其上游服务授予任何权利，
+  不构成衍生作品；各项目自身的免责声明同样适用。
 
 ## 主要能力
 
@@ -331,9 +347,11 @@ Go 依赖：
 | `github.com/jchv/go-winloader` | ISC |
 | `golang.org/x/sys` | BSD-3-Clause |
 
-**托管型 provider 与面板里出现的上游服务**都是独立程序，由使用者自行获取，本项目
-**不包含也不分发**其二进制。各项目的链接、许可与说明见[已并入的 Provider](#已并入的-provider)；
-其许可与使用合规性由各自项目及使用者自行负责。
+**托管型 provider 与面板里出现的上游服务**分两类：MIT 上游照搬源码内嵌（`workbuddy`，
+版权声明逐字保留），其余是独立程序、由使用者自行获取，本项目**不包含也不分发**其二进制。
+各项目的链接、许可与说明见[已并入的 Provider](#已并入的-provider)；
+照搬部分的许可原文见 [`src/THIRD-PARTY-LICENSES/`](src/THIRD-PARTY-LICENSES/)，
+其余项目的许可与使用合规性由各自项目及使用者自行负责。
 
 ## License
 

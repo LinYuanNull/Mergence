@@ -1,9 +1,12 @@
-// orchestrator.go 托管型 provider 的进程编排。
+// orchestrator.go 「被托管 provider」的编排：把一份配置变成一个可用的本机端点。
 //
-// 职责：拉起子进程 → 分发动态端口 → 等健康检查就绪 → 归一其日志 → 退出时确保回收。
+// 职责：产出**一个 RootURL + 一个就绪状态**，并保证退出时回收干净。
+// 两种形态在这里统一（见 Instance）：独立子进程（exec + 动态端口）与
+// 进程内原生（装配上游 handler + 回环监听，见 native.go）。
 //
-// 「托管型」指那些以独立进程运行、暴露 HTTP 接口的 provider（new-api、zcode2api、
-// trae-local-api 等）。它们不是可 import 的库，只能这样接。
+// 「托管型」指那些不是可 import 的库、只能当服务来用的上游（new-api、
+// zcode2api、workbuddy2api、trae2api-web 等）。它们对外都只是一个
+// OpenAI 兼容的 HTTP 端点 + 一套管理 API，ModelMux 只需要知道「它在哪」。
 package orchestrator
 
 import (
@@ -36,7 +39,11 @@ const (
 	StateFailed   State = "failed"
 )
 
-// Instance 一个托管 provider 的运行时状态。
+// Instance 一个被托管 provider 的运行时状态。
+//
+// 「被托管」含两种形态，互斥地占用 cmd（子进程）或 native（进程内）之一：
+// 其余字段（state / port / startedAt / exited / lastErr）对两者是同一套语义，
+// 状态机与就绪判定也共用——差异只在 native.go 那三处（见该文件注释）。
 type Instance struct {
 	cfg       config.ManagedProvider
 	state     State
@@ -45,7 +52,9 @@ type Instance struct {
 	lastErr   string
 	startedAt time.Time
 	cmd       *exec.Cmd
-	cancel    context.CancelFunc
+	// native 非空表示这是进程内原生实例（此时 cmd 恒为 nil）。
+	native *nativeHandle
+	cancel context.CancelFunc
 
 	// exited 在进程被回收后关闭；exitErr 是它的退出错误。
 	// Stop/Restart 要等这个信号：Windows 上 TerminateProcess 返回后端口不会立刻释放，
@@ -118,14 +127,10 @@ func (o *Orchestrator) Start(ctx context.Context, c config.ManagedProvider) erro
 		return fmt.Errorf("%s：%s", msg, errString(err))
 	}
 
-	// 1) 端口
-	port, err := o.alloc.Allocate(c.Name, c.FixedPort)
-	if err != nil {
-		return fail("端口分配失败", err)
-	}
-	inst.port = port
-
-	// 2) 数据目录（每实例独立，避免多实例互踩数据库/状态文件）
+	// 1) 数据目录（每实例独立，避免多实例互踩数据库/状态文件）
+	//
+	// 刻意排在端口之前：两条路径都要它，而原生路径**根本不需要端口**
+	// （内核分配、不进端口表），把端口分配提前会让原生实例白占一个端口号。
 	dataDir := c.DataDir
 	if dataDir == "" {
 		dataDir = config.DataPath(o.home, "instances", c.Name, "data")
@@ -134,7 +139,19 @@ func (o *Orchestrator) Start(ctx context.Context, c config.ManagedProvider) erro
 		return fail("创建数据目录失败", err)
 	}
 
-	// 3) 命令行
+	// 2) 原生型走进程内装配，与子进程路径在此分道（见 native.go）
+	if c.Native() {
+		return o.startNative(ctx, c, inst, dataDir, fail)
+	}
+
+	// 3) 端口
+	port, err := o.alloc.Allocate(c.Name, c.FixedPort)
+	if err != nil {
+		return fail("端口分配失败", err)
+	}
+	inst.port = port
+
+	// 4) 命令行
 	exe := c.Command
 	if exe == "" {
 		return fail("缺少 command", fmt.Errorf("managed_providers[%s].command 为空", c.Name))
@@ -163,7 +180,7 @@ func (o *Orchestrator) Start(ctx context.Context, c config.ManagedProvider) erro
 	cmd.Stdout = w
 	cmd.Stderr = w
 
-	// 4) 拉起
+	// 5) 拉起
 	if err := cmd.Start(); err != nil {
 		return fail("启动进程失败", err)
 	}
@@ -196,7 +213,7 @@ func (o *Orchestrator) Start(ctx context.Context, c config.ManagedProvider) erro
 		"port", port, "pid", inst.pid, "exe", exe,
 		"data_dir", dataDir, "mode", portMode(c))
 
-	// 5) 等就绪
+	// 6) 等就绪
 	readyTimeout := durationOr(c.ReadyTimeout, 40*time.Second)
 	if err := o.waitReady(ctx, port, c.HealthPath, readyTimeout, inst, lg); err != nil {
 		_ = killTree(cmd)
@@ -262,9 +279,9 @@ func (o *Orchestrator) waitReady(ctx context.Context, port int, path string,
 			werr := inst.exitErr
 			o.mu.Unlock()
 			if werr == nil {
-				return fmt.Errorf("进程在就绪前自行退出（端口 %d，退出码 0）", port)
+				return fmt.Errorf("实例在就绪前自行退出（端口 %d，退出码 0）", port)
 			}
-			return fmt.Errorf("进程在就绪前退出：%s", werr.Error())
+			return fmt.Errorf("实例在就绪前退出：%s", werr.Error())
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
@@ -285,32 +302,47 @@ func (o *Orchestrator) waitReady(ctx context.Context, port int, path string,
 	return fmt.Errorf("等待就绪超时（%s，探测 %s）——请查看该 provider 的日志", timeout, url)
 }
 
-// Stop 停止单个 provider。
+// Stop 停止单个 provider（子进程或原生实例）。
 func (o *Orchestrator) Stop(name string) error {
 	o.mu.Lock()
 	inst, ok := o.ins[name]
 	o.mu.Unlock()
-	if !ok || inst.cmd == nil || inst.cmd.Process == nil {
+	if !ok {
+		return nil
+	}
+	// 两种形态都还没有可停的东西：子进程要有 cmd，原生要有 native。
+	// （原生实例的 cmd 恒为 nil，所以判据不能只看 cmd——否则原生永远停不掉。）
+	if inst.native == nil && (inst.cmd == nil || inst.cmd.Process == nil) {
 		return nil
 	}
 	lg := o.log.WithProvider(name)
-	err := killTree(inst.cmd)
+
+	var err error
+	if inst.native != nil {
+		// 优雅收尾：停监听 → drain 在途请求 → 上游落盘/关库。
+		// 它本来就在本进程里，没有进程可杀，所以这里不做 killTree。
+		err = inst.native.Close()
+	} else {
+		err = killTree(inst.cmd)
+	}
+
 	o.mu.Lock()
 	inst.state = StateStopped
 	exited := inst.exited
 	o.mu.Unlock()
 	if err != nil {
-		lg.Warn("终止进程失败", "err", err.Error())
+		lg.Warn("停止 provider 失败", "err", err.Error())
 		return err
 	}
 
-	// 等进程真的消失再返回。TerminateProcess 是异步的，不等就重启会出现
-	// 「端口仍被占用 / 数据文件仍被锁」这类莫名其妙的启动失败。
+	// 等它真的消失再返回。TerminateProcess 是异步的，不等就重启会出现
+	// 「端口仍被占用 / 数据文件仍被锁」这类莫名其妙的启动失败；
+	// 原生实例则要等上游落盘写完，否则紧随的重启会读到半截状态文件。
 	if exited != nil {
 		select {
 		case <-exited:
 		case <-time.After(5 * time.Second):
-			lg.Warn("进程在 5s 内未回收，继续", "pid", inst.pid)
+			lg.Warn("实例在 5s 内未回收，继续", "pid", inst.pid)
 		}
 	}
 	lg.Info("托管 provider 已停止", "pid", inst.pid)

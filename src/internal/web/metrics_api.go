@@ -233,13 +233,15 @@ func (s *Server) collectUpstreamUsage(ctx context.Context, days int) []UpstreamU
 		wg sync.WaitGroup
 	)
 	for i, c := range chans {
-		if c.Source() != provider.SourceManaged {
+		if !c.Source().Hosted() {
 			continue
 		}
 		up := c.Upstream()
 		results[i] = UpstreamUsage{
 			Name: up.Name, DisplayName: up.DisplayName,
-			Source: string(provider.SourceManaged), Unit: "credits",
+			// Family()：对外只暴露 内嵌/托管 两类（原生型对面板就是「托管的平台」），
+			// 理由见 provider.Source.Family。
+			Source: string(c.Source().Family()), Unit: "credits",
 			Kind: kindOf(up),
 		}
 		if !up.Enabled {

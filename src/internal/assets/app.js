@@ -754,9 +754,11 @@ function setKind(kind) {
     box.hidden = box.dataset.kind !== formKind;
   });
   $('kindHint').textContent = formKind === 'managed'
-    ? '积分型平台：ModelMux 拉起并托管该进程，账号在「控制台」里管理。'
+    ? '积分型平台：拉起进程或在进程内运行，账号在「控制台」里管理。'
     : 'API 型平台：直接向 OpenAI 兼容端点发请求，不额外起进程。';
   fillPresets();
+  // 切到托管型时，若上一次选的是内置原生模板，子进程专有字段要立刻隐藏。
+  syncModeFields();
 }
 
 function currentPresets() {
@@ -778,6 +780,10 @@ function applyPreset(id) {
   const p = currentPresets().find((x) => x.id === id);
   if (!p) return;
   if (formKind === 'managed') {
+    // 运行方式与网关种类也由模板带出来。原生型模板没有 command，全靠 mode+kind
+    // 让后端知道「装配哪个内置实现」，而不是去拉起一个不存在的可执行文件。
+    managedMode = p.mode || '';
+    gatewayKind = p.kind || '';
     $('fCmd').value = p.command || '';
     $('fArgs').value = (p.args || []).join('\n');
     $('fPortEnv').value = p.port_env_var || '';
@@ -788,6 +794,7 @@ function applyPreset(id) {
     // 积分平台预填官方折算价（如 WorkBuddy 0.05 元/积分），用户可改
     $('fCreditValue').value = p.credit_value > 0 ? p.credit_value : '';
     $('presetHint').textContent = [p.note, p.doc_url ? '项目：' + p.doc_url : ''].filter(Boolean).join(' · ');
+    syncModeFields();
   } else {
     $('fBase').value = p.base_url || '';
     $('fProtocol').value = p.protocol || 'chat';
@@ -833,6 +840,7 @@ function openChannelForm(raw, forceKind) {
     $('fCmd').value = raw.command || '';
     $('fArgs').value = (raw.args || []).join('\n');
     $('fDir').value = raw.dir || '';
+    $('fDataDir').value = raw.data_dir || '';
     $('fPortEnv').value = raw.port_env_var || '';
     $('fFixedPort').value = raw.fixed_port || 0;
     $('fCreditValue').value = raw.credit_value > 0 ? raw.credit_value : '';
@@ -846,6 +854,9 @@ function openChannelForm(raw, forceKind) {
     // 回填已识别的网关种类：保存时带回去。不回填的话，任何一次编辑都会把
     // kind 清空，平台唯一性校验随即失效（用户改个显示名就能绕过）。
     gatewayKind = raw.gateway_kind || '';
+    // 运行方式同样必须回显。不回显的话，任何一次编辑都会把原生渠道变回
+    // 「去拉起一个空 command」的子进程，渠道再也起不来。
+    managedMode = raw.mode || '';
     if (raw.preset_inferred) {
       // 该回填分支不调用 applyPreset，所以这行不会被覆盖。
       // 放在这里（本分支其它 presetHint 写入之后）追加一句来源说明。
@@ -863,7 +874,7 @@ function openChannelForm(raw, forceKind) {
     document.querySelectorAll('#chModal .sec').forEach((d) => { d.open = true; });
   } else {
     ['fName', 'fPrefix', 'fBase', 'fKeys', 'fKeysM', 'fModels', 'fModelsPath',
-      'fHeaders', 'fTimeout', 'fProxy', 'fCmd', 'fArgs', 'fDir', 'fPortEnv',
+      'fHeaders', 'fTimeout', 'fProxy', 'fCmd', 'fArgs', 'fDir', 'fDataDir', 'fPortEnv',
       'fHealthM', 'fReady', 'fEnv', 'fPriceIn', 'fPriceCached', 'fPriceOut']
       .forEach((id) => { $(id).value = ''; });
     $('fProtocol').value = 'chat';
@@ -884,14 +895,40 @@ function openChannelForm(raw, forceKind) {
       if (formKind === 'embedded' && list.length) { $('fPreset').value = list[0].id; applyPreset(list[0].id); }
     }
   }
+  // 只有新建才清空「网关种类 / 运行方式」——它们对新建而言尚未确定。
+  // 这一对重置以前是无条件执行的（放错位置），会把编辑时的回显值一并清掉：
+  // 保存后 kind 丢失（平台唯一性校验失效），原生渠道的 mode 丢失（退化成子进程）。
+  if (!raw) {
+    gatewayKind = '';
+    managedMode = '';
+  }
+  syncModeFields();
   mountChannelForm();
-  gatewayKind = ''; // 新建：还没识别
 }
 
 // gatewayKind 当前表单识别出的网关种类（'' = 未知/不适用）。
 // 编辑既有渠道时由 openChannelForm 从后端回显值填入；新建时为空，
 // 由后端 kindOfUpstream 按名称推断后落盘。
 let gatewayKind = '';
+
+// managedMode 当前托管型渠道的运行方式：'' / 'process' = 独立子进程；
+// 'native' = 进程内原生（ModelMux 自己装配上游，不拉起任何可执行文件）。
+// 与 gatewayKind 一样：编辑时由 openChannelForm 回显，选模板时由 applyPreset 预填。
+let managedMode = '';
+
+// syncModeFields 按运行方式显隐「只有子进程才需要」的表单项。
+//
+// 原生型跑在 ModelMux 进程内：没有可执行文件，也没有端口环境变量可供注入，
+// 把「启动命令（标着必填）」「端口环境变量」「固定端口」留在原生渠道的表单里，
+// 用户会以为漏填了什么；而这些字段真填了，后端反而会把整个渠道禁用
+// （见 config 的 normalize：原生型带 command 直接禁用）。宁可不显示。
+function syncModeFields() {
+  const native = formKind === 'managed' && managedMode === 'native';
+  document.querySelectorAll('#chModal [data-mode]').forEach((el) => {
+    el.hidden = native && el.dataset.mode === 'process';
+  });
+}
+
 function collectForm() {
   const managed = formKind === 'managed';
   const body = {
@@ -918,9 +955,13 @@ function collectForm() {
   };
   if (managed) {
     Object.assign(body, {
+      // mode 决定后端是拉起子进程还是装配进程内实现；空值 = 子进程。
+      // 新建托管渠道时表单默认子进程，选到内置原生模板才会变成 native。
+      mode: managedMode,
       command: $('fCmd').value.trim(),
       args: lines($('fArgs').value),
       dir: $('fDir').value.trim(),
+      data_dir: $('fDataDir').value.trim(),
       port_env_var: $('fPortEnv').value.trim(),
       fixed_port: intOf($('fFixedPort').value, 0),
       credit_value: floatOf($('fCreditValue').value) || 0,
@@ -1491,12 +1532,15 @@ function bind() {
   $('btnCloseTr').onclick = () => { $('trModal').hidden = true; };
   $('btnCloseAdd').onclick = () => { $('addModal').hidden = true; };
   $('btnCloseDrawer').onclick = () => { $('drawer').hidden = true; };
-  ['chModal', 'trModal', 'addModal'].forEach((id) => {
+  // zcode 账号面板的四个弹窗也走同一套「点遮罩 / ESC 关闭」——
+  // 不在这里登记的话它们关不掉，用户只能刷新页面。
+  ['chModal', 'trModal', 'addModal', 'zcAccModal', 'zcClaimModal', 'zcImportModal', 'zcSetModal'].forEach((id) => {
     $(id).addEventListener('click', (ev) => { if (ev.target === $(id)) $(id).hidden = true; });
   });
   document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
-    ['chModal', 'trModal', 'addModal', 'drawer'].forEach((id) => { $(id).hidden = true; });
+    ['chModal', 'trModal', 'addModal', 'drawer', 'zcAccModal', 'zcClaimModal', 'zcImportModal', 'zcSetModal']
+      .forEach((id) => { $(id).hidden = true; });
   });
 
   ['fLevel', 'fProv', 'fQ'].forEach((id) => {
