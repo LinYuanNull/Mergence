@@ -4,7 +4,27 @@
 
 ## [未发布]
 
-**架构梳理与代码清理。不改运行时行为，对外契约、配置格式、目录结构均不变。**
+### 破坏性变更：项目更名为 Mergence（模渊）
+
+原名 `ModelMux` / `模汇` 全部更名为 `Mergence` / `模渊`，对外可见的标识符一并变更：
+
+| 项 | 原 | 现 |
+|---|---|---|
+| 可执行文件 | `ModelMux.exe` | `Mergence.exe` |
+| 环境变量 | `MODELMUX_*` | `MERGENCE_*` |
+| Go module | `modelmux` | `mergence`（含全部 import 路径） |
+| 配置文件 | `modelmux.json` | `mergence.json` |
+| 日志文件 | `modelmux.log` | `mergence.log` |
+| 运行根目录 | `%LOCALAPPDATA%\ModelMux` | `%LOCALAPPDATA%\Mergence` |
+| 单实例互斥体 / 托盘窗口类 | `ModelMux*` | `Mergence*` |
+| PE 资源（产品名 / 原始文件名 / 描述） | `ModelMux` | `Mergence` |
+
+**升级注意**：环境变量与配置文件名已变，外部脚本需同步更新；旧位置的既有配置不会被自动迁移。
+文档文件名（`docs/Mergence-*.md`）与备份归档目录（`_backups_mergence`）一并更名。
+
+### 架构梳理与代码清理
+
+**不改运行时行为，对外契约、配置格式、目录结构均不变。**
 
 ### 移除（未引用代码与废弃物）
 
