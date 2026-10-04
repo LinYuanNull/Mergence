@@ -145,8 +145,13 @@ type ManagedPreset struct {
 	// PanelPath 它自带面板的路径。
 	PanelPath string `json:"panel_path,omitempty"`
 	// PanelAPIPrefix 它管理 API 的前缀。留空表示用通用默认（/panel/api）；
-	// zcode2api 这类网关的管理 API 挂在 /admin/api，与默认值不同，在这里
-	// 写死，新建渠道时直接带上正确值（老配置由 web 层的契约表兜住）。
+	// zcode2api / trae 这类网关的管理 API 挂在 /admin/api，与默认值不同。
+	//
+	// 这是**声明性**字段，不是运行时真源：面板表单里那个「管理 API 前缀」
+	// 输入框的值后端并不接收（channelInput 没有对应字段），保存往返会把它丢掉。
+	// 真正取用的地方一律是 web 层的契约表 panelAPIPrefixFor —— 它按 kind 硬编码、
+	// 不读配置。这里写下来是为了让「模板声明的前缀」与契约表对得上：
+	// 两处必须同步改，否则新网关会拿到 /panel/api 而静默 404。
 	PanelAPIPrefix string `json:"panel_api_prefix,omitempty"`
 	ModelPrefix    string `json:"model_prefix"`
 	// RouteKeyHint 提示它的路由鉴权 Key 从哪来。
@@ -210,29 +215,51 @@ var ManagedPresets = []ManagedPreset{
 		Note:         "AGPL-3.0。只以独立进程方式调用、不随包分发，以免影响本项目自身的许可。",
 	},
 	{
-		ID: "zcode", Label: "ZCode 账号网关（zcode2api）", Vendor: "zcode2api",
-		// 它是 Python 项目（AGPL-3.0），不是单个 exe：入口是 cli.py 的 serve 子命令。
-		// 用托管型拉起时把「启动命令」填成 python、参数填 cli.py serve。
-		Command: "python", Args: []string{"cli.py", "serve"},
-		PortEnvVar: "ZCODE_PORT",
-		// 探活用 /meta（它没有 /healthz）；后台在 /admin/。
+		ID: "zcode", Label: "ZCode 账号网关（内置原生）", Vendor: "ZCode",
+		// 内置原生：跑在 ModelMux 进程内，不再需要独立部署 zcode2api（Python）。
+		//
+		// 与 workbuddy / trae 的**关键区别**：那两个是「MIT 上游 + 逐字照搬」，
+		// zcode 是 Track 2 **独立重写**（上游 dengyie/zcode2api 是 AGPL-3.0，
+		// 不能照搬）。所以本仓库里没有任何上游代码，也就不需要
+		// `src/THIRD-PARTY-LICENSES/zcode/`。
+		Mode: config.ModeNative,
+		Kind: "zcode",
+		// 探活用 /meta（上游就有的端点，只有 version 一个键）。
 		HealthPath: "/meta", PanelPath: "/admin/", ModelPrefix: "zcode-",
 		// 管理 API 在 /admin/api（不是通用的 /panel/api）。
 		PanelAPIPrefix: "/admin/api",
-		RouteKeyHint:   "留空即可：网关默认不校验；也可在它的设置页配网关 Key 后填在这里",
-		DocURL:         "https://github.com/dengyie/zcode2api",
-		Note: "AGPL-3.0，只以独立进程方式调用、不随包分发。" +
-			"它是 Python 项目：启动命令填它 venv 里的 python.exe，参数填 cli.py serve。" +
-			"它自带 600 秒一轮的套餐领取；要按固定时段领，把它 .env 里的 " +
-			"ZCODE_CLAIM_ROUND_INTERVAL 设为 0 关掉，再交给 ModelMux 的" +
-			"「限时套餐自动领取」（后台密码填它的 ZCODE_ADMIN_KEY，渠道留空即自动识别）。",
+		RouteKeyHint:   "留空即用默认密码 `zcode`；填了就是唯一的后台密码（面板与转发共用一处）",
+		// 老模板的 command 是 `python`（解释器名）—— 不能当锚点（任何用 python
+		// 启动的渠道都会被误判）。改用独有参数串 `cli.py serve` 作锚点。
+		LegacyCommands: []string{"cli.py serve"},
+		Note: "跑在 ModelMux 进程内，不再需要单独准备 zcode2api（Python 项目）。" +
+			"把「数据目录」指到你原来 zcode2api 的 data/（含 accounts.db）即可沿用已登录的账号；" +
+			"留空则用独立的新目录，需要在「控制台」里重新登录。" +
+			"**密码只剩一处**：渠道的「路由密钥」就是后台密码（留空用默认 `zcode`），" +
+			"不再需要像独立部署那样两处同步。" +
+			"注意它与子进程形态的 zcode 渠道是**同一个平台**，不能同时启用，迁移时先删掉旧渠道。",
 	},
 	{
-		ID: "trae", Label: "Trae 本地网关", Vendor: "Trae",
-		Command: "node", Args: []string{"server.js"}, PortEnvVar: "PORT",
-		HealthPath: "/healthz", PanelPath: "/", ModelPrefix: "trae",
-		RouteKeyHint: "若它要求本地 Key，按它文档填写",
-		Note:         "Node 实现：命令填 node，参数填入口脚本（相对工作目录）。",
+		ID: "trae", Label: "Trae 网关（内置原生）", Vendor: "Trae",
+		// 内置原生：跑在 ModelMux 进程内（上游 connectedGraph/trae2api-web，MIT 照搬）。
+		// 它自带账号池调度 + 冷却状态机 + 每日签到 + 登录闭环。
+		Mode:       config.ModeNative,
+		Kind:       "trae",
+		HealthPath: "/healthz", PanelPath: "/admin", ModelPrefix: "trae",
+		// 管理 API 在 /admin/api（与 zcode 同前缀，不是通用的 /panel/api）。
+		PanelAPIPrefix: "/admin/api",
+		RouteKeyHint:   "可留空：内置实现默认不校验本地 Key；填了就会在转发与签到时装进 Authorization",
+		DocURL:         "https://github.com/connectedGraph/trae2api-web",
+		// 刻意**不**设 LegacyCommands：老 trae 模板的 command 是 `node`（解释器名），
+		// 拿它当锚点会把任何用 node 启动的渠道都误判成 trae。workbuddy 能用
+		// `wb2api`/`workbuddy2api` 作锚点是因为那是它独有的可执行文件名，trae 没有
+		// 对应的独有名字，所以宁可让老渠道回显为空，也不引入误判。
+		Note: "跑在 ModelMux 进程内，不再需要单独准备 Node 网关。" +
+			"账号池、每日签到与登录闭环都由内置实现承担：" +
+			"在「控制台」里用设备码/回调链接登录即可添加账号，" +
+			"「限时套餐自动领取」会定时触发它内部的签到。" +
+			"登录回调需要一个固定端口（默认 18080，见数据目录下的 config.json）。" +
+			"注意它与子进程形态的 trae 渠道是**同一个平台**，不能同时启用，迁移时先删掉旧渠道。",
 	},
 	{
 		ID: "custom-managed", Label: "自定义托管进程（空白）", Vendor: "自定义",
@@ -348,12 +375,20 @@ func InferManagedPreset(command string, args []string, healthPath, portEnvVar st
 // 那些渠道的 command 是 wb2api.exe 这类值。少了这一步，老渠道的模板回显会
 // 退化成「自定义托管进程（空白）」，用户会以为自己填的东西丢了。
 //
-// 空 command 单独处理，且**只**认「从不需要 command」的模板（即自定义托管进程）。
-// 带 LegacyCommands 的模板对应的是「曾经有 command」的形态，让空值命中它会把
-// 一个空白渠道显示成某个具体网关——那正是要修的 bug 的镜像。
+// 空 command 单独处理，且**只**认「子进程型、且从不需要 command」的模板
+// （即自定义托管进程）。两个条件都不能少：
+//
+//   - 带 LegacyCommands 的模板（workbuddy）对应「曾经有 command」的形态，
+//     让空值命中它会把一个空白渠道显示成某个具体网关——那正是要修的 bug 的镜像。
+//   - **原生型模板（Mode=native）同样要排除**。它也不需要 command，但它不是
+//     「空白自定义」，而是一个有明确身份的内置实现；它的回显走 kind
+//     （ManagedPresetByKind），不走这条推断。不排除的话，空 command 渠道会
+//     同时命中「内置原生 trae」与「自定义托管进程」而并列，把本来能判出来的
+//     custom-managed 也拖成「判不出」。
 func presetCommandMatch(p ManagedPreset, wantCmd string) bool {
 	if wantCmd == "" {
-		return normalizeCommand(p.Command) == "" && len(p.LegacyCommands) == 0
+		return normalizeCommand(p.Command) == "" && len(p.LegacyCommands) == 0 &&
+			p.Mode != config.ModeNative
 	}
 	if normalizeCommand(p.Command) == wantCmd {
 		return true

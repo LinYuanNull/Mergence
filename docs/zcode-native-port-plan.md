@@ -393,6 +393,82 @@ README 里的溯源句照写（事实陈述，不涉及代码复制）。
   Release 资产：源码 zip + `zcode2api-go-windows-amd64.exe` / `linux-amd64`。**不含 Chromium**。
   **验收**：全新机器上「下载 exe → `serve` → 面板可用 → 登录账号 → 领取成功」全流程走通。
 
+### 5.3 A 线进度（2026-10-03 / 10-04 实测）
+
+| 期 | 状态 | 证据 |
+|---|---|---|
+| **A0** | ✅ | 仓库 `LinYuanNull/zcode2api-go`（MIT，public）已建；30 文件骨架（`cmd/` + 21 个 `internal/` 包 + CI）；首次提交 `6746d16`；CI run `37130662051` **success** |
+| **A1** | ✅ | **43 条样本覆盖 25/25 路由**（22 管理 + 3 网关）；采样器 `tools/samplecontract/`（Go，仅标准库，键规则 + 取值规则两层脱敏）；`PROVENANCE.md` 采样记录表（25 行）+ 未覆盖分支清单；提交 `1444c2c`；CI run `37131568954` **success** |
+| **A2** | ✅ | **落盘契约 + 双向读校验**。契约 `docs/contract/store/`（`schema.sql` / `account-data-shape.json` / `fingerprint-shape.json` / `observations.md` 23 条规则）；夹具 `fixtures/target.db`（36864 B，6 条账号）+ 4 个原始响应体，由 `tools/samplefixture/` 在独立临时数据目录生成；实现 `store` / `models` / `fingerprint` / `settings` / `constants`；**25 个测试用例全绿**（含「读库→重编码与靶机原始 `data` 紧凑化后逐字节相同」）；提交 `b68a502`；CI run `37134238424` **success** |
+| **A3** | ✅ | **22 条管理路由 + 鉴权 + settings 读写**。实现 `httpx`（保真编码唯一入口）/ `authadmin`（常数时间比较 + IP 失败锁定）/ `adminapi`（22 路由）/ `server` / `appdir` / `buildinfo`；网关 / 额度 / 领取 / 登录 / 验证码为**显式报错**的占位。**契约回放 43/43**（`internal/contract`，逐字段 + 键序）；**上游自带 `frontend/` 面板真机 38/38**（`tools/e2e_panel.py`，查渲染后 DOM）；**ModelMux 脚本默认模式 44/44、Go 模式 47/47**；`gofmt` / `vet` / `test` 全绿 + `tools/spec_reorder.py --check` 通过（已接 CI）；提交 `1696bc9`；CI run `37141410784` **success** |
+| **A4** | ✅ | **转发链路**。`/v1/messages` 保序改写出站 + 逐字节透传响应（含 SSE 逐帧 flush）；`/v1/chat/completions` 白名单重建出站 + 转 OpenAI 形状（JSON / SSE）；调度器「逐个账号试到成功」，错误分类（401/403/402/429/5xx/传输失败/客户端错）与冷却逐条对齐基线；出站代理语义照实（messages 走环境代理）。出站逐字节对照工具 `tools/mitmupstream`；提交 `042b76c` |
+| **A5** | ✅ | **额度 / 领取 / 登录 三条管理侧链路（限已采样分支）**。登录真打上游 `oauth/cli/init` / `poll`（`flow_id` 用上游给的）；额度**三条并发** + 同批共用 `X-Request-Id` + FRESH/CACHED 按**键名**区分（`result` vs `message`）+ `invalid` 后**永不再查**；领取四条路由的凭据失效分支与旁录**逐字节一致**。四个提交：`fc2ca6c`(A5-1 出站采样工具+契约) / `eaaf90a`(A5-2 登录) / `497e6cf`(A5-3 额度) / `dd8b99d`(A5-4 领取)。**未采样 ⇒ 501**（额度 `200` 成功体、领取成功路径、OAuth `ready` 之后落库）。e2e：额度 **31/31**、领取 **35/35** |
+| **A6** | ✅ | **验证码（Go 自写 CDP 客户端）**。`internal/captcha/cdp` 手写极简 CDP（WebSocket = RFC 6455 客户端子集，纯标准库）+ `internal/captcha` 求解器（用时现解，只驱动**系统已装** Edge/Chrome）。**实测更正计划两处**：① 命令是 **7 条**不是 6 条（漏了 `Target.attachToTarget`，flatten 取 `sessionId`）；② `Emulation.setUserAgentOverride` 的 `userAgentMetadata` 里 `platform`/`platformVersion`/`architecture`/**`model`**/`mobile` 是**必需项**，加 `omitempty` 就整条 `-32602`。另有**两处契约更正**：`claim/captcha-config` 由 A5-4 的空配置改为**样本同值**（空 `scene_id` 会让面板控件不可用），且该路由**要出站**（拉 `GET /api/v1/client/configs`，600s 缓存）。真机解出 280 字符凭据（连续 3/3）；提交 `9a0c757`；e2e **17/17** |
+| **A7** | ✅ | **发布 v0.1.0**。`tools/build_release.py` 产出 `windows-amd64`（`-H windowsgui`、注入 `buildinfo.Version`）/ `linux-amd64` + `git archive` 源码 zip + `checksums.txt`，**不含 Chromium**；`docs/CHANGELOG.md` 作为 Release notes 单一真源。tag `v0.1.0` → 提交 `ea348aa`；四资产上传后**下载回算 SHA256 与 `checksums.txt` 逐字符一致**；空目录冷启动 **12/12**（只放 exe：`serve` → `/meta` 版本 `0.1.0` → 管理面页面可达 → 401/200 鉴权 → 加账号 → 设置读写）；CI run `37181979859` **success**。**未覆盖**：计划里的「登录账号 → 领取成功」两步走不通（无真实账号 + 领取端点无出站样本），按纪律**如实标注** |
+
+> **A7 附带更正三处 A5 时代的陈旧断言**（A6 已改变事实但断言未同步，属测试脚本真缺陷）：
+> `tools/e2e_claim.py` 的 `captcha-config` 由「空配置」改为「与样本 `15-*` 一致」、
+> 「claim 链路零出站」改为「`preview`/`claim`/`manual` 三条零出站，`captcha-config` 另有一条 `client/configs` 出站」；
+> `tools/e2e_panel.py` 的 JWT 额度刷新由「501 尚未实现」改为「出站失败时面板显式报刷新失败」
+> （为此把被测服务出站指向**死端口**，让该分支确定可达，不依赖本机能否连 z.ai）。
+
+**A0 说明**：新仓库首次推送不能走纯 Git Data API（空仓库的 `POST /git/blobs|trees|commits` 一律 **409**），
+需先用 Contents API 造占位提交，再 force 覆盖 ref —— 工具收口在 `_pubtools/newrepo.py`（见 `PUBLISHING.md`）。
+
+**A1 说明**：靶机 `dengyie/zcode2api` **v2.6.8**（前端 2.6.3）以**独立临时数据目录**启动
+（`ZCODE_DATA_DIR=<tmp>`、`ZCODE_ADMIN_KEY=1234`），采样不触碰真实 `data/accounts.db`。
+账号池为空 ⇒ 网关路由采到 `503 no_available_account`、账号路由采到空态与 404；
+**有账号的成功链路 / OAuth `ready` / 验证码成功分支本轮未覆盖**，已在 `PROVENANCE.md`
+显式列出（避免实现时凭猜测补全），拿到真实账号后补采。
+
+**A2 说明**：A1 采的是 **HTTP 契约**，A2 采的是**落盘契约** —— 因为 Go 实现要接管用户
+**现有**的 `accounts.db`（风险登记 #6 的唯一防线）。方法与 A1 同源：在独立临时数据目录里
+驱动真实靶机，用**它自己的 HTTP API** 造数据，然后读它写出的文件；不读、不抄上游源码。
+
+- **验收判据 = 双向读校验**：读 `target.db` → 我们的 `Account` → 重新编码，与靶机原始
+  `data` **紧凑化后逐字节相同**（锁住键顺序、键集合、取值、数字格式；空白不属于契约）。
+  `View()` 与靶机原始响应体逐字段一致；`settings.View()` 同理。
+- **验收测试当场查出三个真缺陷**（都已修）：① 裸 `CREATE TABLE` ⇒ 打不开已有库
+  （`table accounts already exists`，正是验收第一条）；② 漏建两个索引 ⇒ 新建库与靶机不同形；
+  ③ `json.Marshal` 会把 `< > &` 转成 `\u00xx`，且**外层还会再压一遍** ——
+  即使 `MarshalJSON` 自身没转义也无效（靶机用 `ensure_ascii=False` 不转义），
+  故新增 `models.MarshalNoHTMLEscape` 作为保真编码唯一入口，**A3 的响应编码同样必须用它**。
+- **未覆盖分支**已登记（`PROVENANCE.md` + `observations.md` §4）：`mode="jwt"`、
+  `cooling` / `exhausted` / `invalid` 的转移条件、`quota` / `plan` 内部结构、
+  `stats.calls` / `stats.fail` 语义（暂取求和，A4 校准）。这些**不凭猜测补全**。
+
+**A3 说明**：A3 采的是 **HTTP 管理面契约**，验收分三层，全部来自真实运行：
+
+1. **强契约回放**（`internal/contract/replay_test.go`）：把 A1 采的 **43 条真实样本**逐条重放，
+   断言**状态码 + 响应体逐字节**（含键顺序）。样本里每条都带着当时的请求体，
+   所以这是「同一输入 → 同一输出」的对照，不是形状抽查。
+2. **真实消费者端到端**（`tools/e2e_panel.py`）：**上游自带的 `frontend/` 面板**（不进仓库，
+   本机指过来）在真实浏览器里跑登录 → 统计卡 → 新增 → 编辑 → 启停 → 刷新 → 导出落盘 →
+   导入 → 删除 → 设置读写 → 监控清空，**断言渲染后的 DOM 文本**（`38/38`）。
+   这一层专门抓「回放测试抓不到」的问题：字段少一个、名字错一个、空容器给成 `null`，
+   回放可能照样绿，面板却白屏。属 A5/A6 的分支（JWT 额度刷新、领取、OAuth 登录）
+   **不跳过**，改为断言面板上出现「失败」回执 —— 把「我们还不支持」也钉成可观测行为。
+3. **下游消费方端到端**：ModelMux 的 `test/verify_zcode_accounts.py` 把托管渠道的
+   `command` 指向 Go 可执行文件（`ZCODE_UPSTREAM_EXE`）⇒ **Go 模式 47/47**；
+   默认（假网关）模式仍 **44/44**，确认未回归。
+
+- **A3 当场查出并钉死两处 A2 误记**（都是真缺陷，已写进 `PROVENANCE.md` 与 `observations.md` §3.1/§3.2）：
+  - `admin_key_is_default` 的真判据是「**库里的 admin_key == 本进程配置给的默认密码**」，
+    配置来自 `ZCODE_ADMIN_KEY`、未配置回落 `zcode`；**既不是字面量 `1234`，也不是库里的初值**。
+    A2 原记「== `"1234"`」是把**采样机 `.env` 的取值**当成了语义。三组对照实验为证。
+  - `claim_round_interval` 的默认值是 **3600**，不是 `0`；`0` 只是采样机 `.env` 的取值。
+    采样机靠 `.env` 覆盖，所以 A1/A2 的样本里看到的是 `0`。
+- **顺带确认**：上游 `serve` **没有任何命令行参数**（配置全走环境变量 / `.env`）；
+  `ZCODE_ADMIN_KEY` / `ZCODE_QUOTA_REFRESH_INTERVAL` / `ZCODE_ACCOUNT_CONCURRENCY` /
+  `ZCODE_CLAIM_ROUND_INTERVAL` 四项能改**首启默认值**；而 **`ZCODE_GATEWAY_KEY` 完全不生效**
+  （进程环境 / `.env` / 运行期鉴权三条独立探测都为否），网关 Key 初值恒为 `""`。
+  为此把「单个 admin key 初值」重构成整组 `Configured` 初值，贯穿
+  `constants → settings → store → server → adminapi → main`。
+- **键顺序是可观测契约**：SPEC.md 的 JSON 骨架键序必须与样本一致，工具
+  `tools/spec_reorder.py` 做校验（`--check` 幂等）并**接进 CI**，防止后续手改漂移。
+- **未实现分支一律显式报错**（501 / 502），**绝不伪造成功** —— 这是 A3 的验收口径，
+  也是 A4–A6 的接口预留方式。
+
 ---
 
 ## 六、Track 3：zcode 内嵌进 ModelMux
@@ -466,6 +542,50 @@ Intl Web SOLO remote 协议，并独有 **9074 限流识别**与更细的模型�
 
 ⚠️ **串行约束**：Track 4 与 Track 1 / 3 **都要碰 `proxy.go` / `presets.go` / `claim_api.go`** ⇒
 这三处必须串行改（同一轮只允许一个改动者），不可并行写同一文件。
+
+### 7.4 T0–T3 验收结论（2026-10-03 实测）
+
+| 阶段 | 结论 |
+|---|---|
+| **T0** | ✅ fork 到 `LinYuanNull/trae2api-web-panel`（MIT，126 KB，走 GitHub Git Data API） |
+| **T1** | ✅ 22 个文件照搬进 `src/internal/provider/trae/`（5 包 + `server/admin.html`）。落位判据 = **import 改写 + LF 归一 + 去 UTF-8 BOM + gofmt 后与上游逐字节等价**（上游 22 文件里 14 个带 BOM、且全部未跑过 gofmt，故判据必须含这两步）。上游自带测试套件**全通过**（照搬正确性的第一道证据） |
+| **T1b** | ✅ 装配层 `src/internal/native/trae/trae.go`。与 workbuddy 装配层的两处不同：① 登录回调需要**固定端口**的第二监听（OAuth `redirect_uri` 预注册，不能内核分配）；② **签到没有 HTTP 入口**（上游 scheduler 只在进程内按整点跑），需在 handler 外包一层 ServeMux 补 `POST /admin/api/checkin` |
+| **T2** | ✅ 四条接缝：`presets.go`（trae 改原生型 / `PanelAPIPrefix=/admin/api`）、`proxy.go`（`panelAPIPrefixFor` 认 trae）、`claim_api.go`（`claimPathFor`/`claimKeyFor` 为 trae 分叉）、`api_channels.go`（`gatewayLabel`/`gatewayKindOf` 认 trae）。数据面转发**未改动** |
+| **T3** | ✅ `go build` / `go vet` / `gofmt -l` 零输出；`go test -C src ./...` 全 ok；`build.py --check` 7 个前端逐字节一致；exe 可复现（连续两次构建 SHA256 同为 `c62bbc367549c712…`）。e2e 全跑：`verify.py` **121/121**、`check_sources.py` **8/8**、`verify_upstream_ui` **51/51**、`verify_side_console` **57/59**、`verify_layout_ui` **32/33**、`verify_theme` **16/16**、`verify_silent_minimize` **8/8**、`gui_check` 全通过 |
+
+**新增测试**（3 个文件、共 21 条）：
+
+| 文件 | 覆盖 |
+|---|---|
+| `internal/native/trae/trae_test.go` | 真起监听 + 真发 HTTP：探活、管理 API、**签到入口的凭据校验**、外层只截 POST（非 POST 落上游 404）、数据面鉴权、route key 覆盖实例配置、已有 `config.json` 逐字节不动、Close 释放监听 |
+| `internal/web/trae_panel_test.go` | 契约表前缀、签到路径/凭据来源（**trae 用 route key，zcode 用后台密码**）、面板代理读写透传、原生渠道往返与同平台唯一性 |
+| `internal/provider/native_preset_test.go` | trae 预设为原生型、**刻意无 `LegacyCommands`**、所有原生型预设不带 process-only 字段 |
+
+**与计划的两处偏差（都是有意的）**：
+
+1. **刻意不给 trae 设 `LegacyCommands`**。计划原话是「认回旧 trae 渠道」，但老 trae 模板的
+   command 是**解释器名 `node`**，不具区分度 —— 登记为锚点会把任何用 node 启动的渠道
+   （含用户自建网关）误判成 trae。workbuddy 能用 `wb2api` 当锚点是因为那是它独有的可执行文件名。
+   代价是「子进程形态的老 trae 渠道回显为空」；换来的是零误判。为此在 `presetCommandMatch`
+   的空 command 分支补了 `p.Mode != config.ModeNative`（**修掉一处真实退化**：trae 加入竞争后
+   会让「空 command + /healthz」与 `custom-managed` 并列而判不出）。
+2. **签到入口需要自行补一道鉴权**。上游 `withAdminAuth` 是 `server.Handler` 的私有方法，
+   装配层无法复用（也不该为此改动落位的上游源码）。签到是本层补出来的写入口，
+   若不加校验就会成为一个「配了 Key 却不校验」的洞 —— 密钥被静默忽略、拿错 Key 也照样成功。
+   已按上游同口径补上（空 Key 不鉴权 / Bearer 前缀大小写不敏感 / 常量时间比较 / 错误体同形）。
+
+**二进制体积**：trae 贡献 **263 KB**（12,586,496 vs 去掉 trae 的 12,317,184）。
+体积增长的主体是 native workbuddy（**2.84 MB**，去掉两个原生实现后为 9,341,952），与 trae 无关。
+
+**T3 三条失败项是数据不是代码**：`/api/channels/zcode/upstream/accounts` 权威返回 `{"accounts":[]}`，
+`account_count=0` 的托管渠道按设计整体隐藏（`app.js`）⇒ zcode 卡片不渲染，连带账号行、额度进度条
+与预设回显断言拿不到数据（`verify_side_console` 少 2、`verify_layout_ui` 少 1）。zcode 账号池
+只能用户自己做 OAuth 才能填上，与 trae 改动无关。
+
+**T3 顺手硬化的一处脆弱断言**：`verify_upstream_ui.py` 原以硬编码「19 个模型」断言模型表行数，
+而上游 workbuddy 账号的模型目录是活数据（本轮实测已 **19 → 46**，`rows=46`），套件在上游一变就假红。
+已改为与 `UP.models` 条数比较 —— 断言仍是「渲染出上游返回的**全部**模型」，但不依赖账号当前有多少模型。
+该文件是 CRLF，按仓库约定用 `newline=''` 的 Python 脚本替换、先全量校验锚点再落盘。
 
 ---
 
@@ -614,7 +734,7 @@ Track 1   workbuddy 内嵌（先行 · 架构试验田）
 
 Track 2   A 线 zcode2api-go（全新纯 MIT 仓库 · 单独发版）
   A0 骨架 ─▶ A1 契约固化 ─▶ A2 账号池 ─▶ A3 管理API ─▶ A4 转发链路 ─▶ A5 领取/登录 ─▶ A6 验证码 ─▶ A7 发 v0.1.0
-                                                                        （每期可独立验证、可随时停手）
+     ✅           ✅             ✅            ✅            ⏳ 下一步        （每期可独立验证、可随时停手）
                                    ⬇  A 线发版并稳定后
 
 Track 3   zcode 内嵌进 ModelMux
@@ -626,8 +746,32 @@ Track 4   trae 内嵌（上游 connectedGraph/trae2api-web · MIT+Go ⇒ 照搬 
 例外      new-api —— 有意保留为托管型子进程，不内嵌（理由见 2.1）
 ```
 
-**当前进度**：① 第三类渠道**已定名 `NativeProvider`**（第一节）✅；② **Track 1 的 W0 / W1 / W2 / W3 已完成**（fork + 104 个 Go 文件落位 + 四条接缝改进程内 dispatch + 全量回归，见 4.5）；③ **下一步 = W4**（并入 ModelMux 的一次常规发版，不单独发版）。
+**当前进度**：① 第三类渠道**已定名 `NativeProvider`**（第一节）✅；② **Track 1 的 W0–W3 已完成**（fork + 104 个 Go 文件落位 + 四条接缝改进程内 dispatch + 全量回归，见 4.5），W4 并入常规发版（不单独发版）；③ **Track 4（trae 内嵌）T0–T3 已完成**（见 7.4）；④ **Track 2 A 线 A0–A7 全部完成，`v0.1.0` 已发布**（`LinYuanNull/zcode2api-go`，见 5.3）✅；⑤ **Track 3 B 线 B0–B2 已完成**（见下，「B 线验收」），**下一步 = B3｜发 ModelMux v0.3.0**。
+
+**B 线验收（2026-10-04 实测）**：`src/internal/provider/zcode/`（25 个包，按 ModelMux 接口面重新组织 A 线业务层）+ `src/internal/native/zcode/`（装配层）落位。
+
+- **B0 改写**：契约驱动的业务层整体搬迁（constants / settings / models / pyjson / fingerprint /
+  store / agent / identity / bodytransform / compat / scheduler / gateway / quota / claim /
+  oauth / captcha（含自写 CDP 客户端）/ authadmin / reqlog / adminapi），**去掉**独立
+  HTTP server 与 CLI。移植的 **223 个测试函数**全部保留并通过（契约夹具随包迁入 `testdata/`），
+  装配层另有 9 个真实运行测试。
+- **B1 接线**：`presets.go` 的 zcode 改 `mode=native`/`kind=zcode`（`LegacyCommands` 用
+  `cli.py serve` 作锚点，避免拿解释器名 `python` 误判）；`panelAuthKey`/`claimKeyFor`
+  **按运行形态区分**凭据来源。
+- **密码合并**（最大简化收益）：原生型的后台密码真源 = 渠道 route key（空则默认 `zcode`），
+  装配层用 `store.WithForcedSetting` 在每次启动时覆盖账号库里的 `admin_key`，
+  于是「两处同步、改一处就整块 401」的经典故障从根上消除。老式子进程渠道保留原语义。
+- **B2 回归全绿**：`verify.py` 121 · 上游控制台 51 · 侧栏控制台 59 · zcode 账号 44 ·
+  布局 38 · 拉取模型 22 · 首帧主题 16 · 限时领取 11 · GUI 生命周期 全通过 ·
+  静默最小化 8 · 源码不变式 8 · **原生 zcode 专项 29（新增 `verify_zcode_native.py`）**；
+  `gofmt`/`go vet` 零输出、`go test ./...` 全通过、`build.py --check` 前端逐字节一致。
+- **前端零改动**：全程未编辑 `web/` 下任何文件（`web/zcode.js` 仍 48,956 B）——
+  「保留 `/api/channels/zcode/upstream/<rest>` URL 形态、只换实现」的设计得到验证。
+- **许可**：仓库里**没有任何上游代码**（独立重写），故 `src/THIRD-PARTY-LICENSES/` 无 zcode 目录；
+  README 的 §3.5 两处已同步改写（工作方式分「照搬 MIT」与「独立重写」两类，都不是上游 AGPL 代码）。
+- **未覆盖（照旧如实标注）**：真实账号的 OAuth 全流程、额度 `200` 成功体、领取成功路径
+  ——需真实账号采样，一律显式 501，不伪造。
 
 Track 4 因上游换为 **MIT + Go**，与 **Track 1 同路**（照搬，非重写）⇒ 可在 Track 1 的 W2 把接缝架构跑通后**立即并行铺开**。
 
-Track 2 的第一步是 **A1 契约固化** —— 它是后续每一期的判据来源，也是「独立实现」主张的唯一证据链。
+Track 2 的 A 线**已全部完成并发布 `v0.1.0`**：A1 契约固化（44 条样本 / 25 条路由）、A2 落盘契约（双向读校验）、A3 管理 API（22 路由 + 鉴权 + settings）、A4 转发链路、A5 额度/领取/登录、A6 验证码（Go 自写 CDP 客户端）、A7 发版。它们既是后续每一期的判据来源，也是「独立实现」主张的唯一证据链。**仍未覆盖、且不凭猜测补全**的分支集中在三处：额度查询的 `200` 成功体、领取的成功路径（上游端点表里根本没有领取端点）、OAuth `ready` 之后的凭据落库 —— 三者都需要**真实账号**走完整授权才能采样，当前一律显式 `501`。**A6 遗留**：预解池 / `CAPTCHA_TOKEN_TTL` / `invalidate()` 三处未实现（用时现解已够用：领取频率是每天一次）。Track 3 的 B0 起，改写时按 ModelMux 的 `Upstream` / `Channel` / `Registry` 接口面重新组织，去掉独立 HTTP server 与 CLI，保留并改写 store / 调度器 / body 变换 / identity / `openai_compat` / quota / claim / captcha。

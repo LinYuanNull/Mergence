@@ -669,7 +669,35 @@ func (s *Server) handleChannelAdminKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 网关已改，接着把同一个值写进本机配置。
+	// ── 原生型：route key 是后台密码的**真源**，所以还要把新值写进渠道配置 ──
+	//
+	// 内嵌形态下「两处」变成了「一处存储 + 一处覆盖」：密码存在网关库（上面
+	// 刚 PUT 成功），而 native/zcode 每次装配都会用 route key 覆盖它
+	// （WithForcedSetting）。若这里不同步 route key，下次重启就又把密码
+	// 压回旧值 —— 那正是「只改一边」故障换了个方向。
+	//
+	// 老式子进程形态不需要这一步：它的密码本就存在网关侧，ModelMux 只负责
+	// 转发时注入；本机唯一的那份副本（Claim.AdminKey）在下面统一写。
+	if up.Source == provider.SourceNative {
+		if _, _, err := s.saveConfig(func(c *config.Config) {
+			for i := range c.Managed {
+				if c.Managed[i].Name == up.Name && c.Managed[i].Route != nil {
+					c.Managed[i].Route.APIKey = newKey
+				}
+			}
+		}); err != nil {
+			writeJSONStatus(w, http.StatusBadGateway, map[string]any{
+				"error": "网关密码已改成新值，但写入渠道配置失败：" + err.Error() +
+					"；请到该渠道的「路由密钥」里再填一次同一个密码",
+				"upstream_changed": true, "code": "partial"})
+			return
+		}
+		s.lg.Info("原生网关后台密码已修改（route key 即唯一真源）", "channel", up.Name)
+		writeJSON(w, map[string]any{"ok": true, "synced": []string{"gateway", "route_key"}})
+		return
+	}
+
+	// ── 老式子进程：网关已改，接着把同一个值写进本机配置 ──
 	if _, _, err := s.saveConfig(func(c *config.Config) { c.Claim.AdminKey = newKey }); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]any{
 			"error": "网关密码已改成新值，但写入本机配置失败：" + err.Error() +
@@ -1175,6 +1203,8 @@ func gatewayLabel(kind string) string {
 		return "ZCode"
 	case "workbuddy":
 		return "WorkBuddy"
+	case "trae":
+		return "Trae"
 	case gatewayKindNewAPI:
 		return "new-api"
 	default:
@@ -1229,6 +1259,10 @@ func gatewayKindOf(m config.ManagedProvider) string {
 	case strings.Contains(facts, "wb2api"), strings.Contains(facts, "wb2a"),
 		strings.Contains(facts, "workbuddy"):
 		return "workbuddy"
+	case strings.Contains(facts, "trae"):
+		// trae 只有 preset 这一个可靠信号（老配置的 command 是解释器名 `node`，
+		// 不具区分度，不能作锚点）。所以只认 preset 里出现 trae 的情况。
+		return "trae"
 	case strings.Contains(facts, "new-api"), strings.Contains(facts, "newapi"):
 		return gatewayKindNewAPI
 	}

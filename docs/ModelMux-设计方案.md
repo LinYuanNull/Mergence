@@ -635,25 +635,62 @@ GET /api/quota
 
 ## 10. 分阶段执行计划
 
-| 阶段 | 内容 | 可验收标准 |
-|---|---|---|
-| **P0 骨架** | 新建 `modelmux/` 模块；进程编排器（动态端口、健康检查、退出清理、日志归一、`ports.json`） | 能拉起/关闭一个假 provider，端口动态分配且持久化复用 |
-| **P1 托盘与生命周期** ⭐ | 窗口子类化拦截 `WM_CLOSE`；Win32 托盘（含 `TaskbarCreated` 重建）；有序退出时序；单实例唤出 | 关窗后进程仍在、托盘图标在；右键「退出」后**进程与所有子进程全部消失、端口全释放、通知区无残留图标**；杀掉 explorer 重启后图标自动恢复 |
-| **P2 日志基建** ⭐ | `log/slog` 结构化双通道 + `req_id` 贯穿；面板日志页改为表格 + 链路抽屉 | 4 路日志汇流后每条都能看出处；按 req_id 能串完整链路 |
-| **P3 自定义渠道** ✅ | 内嵌型 provider 框架（三条协议路径、多 Key 池、模型拉取）+ 添加表单 + 测试连接 + 预设模板 + 无界面模式 | **已完成**：37 项端到端断言全通过；chat 保真直通（含流式）、Anthropic 双向转换（含流式与 tool_calls）；`responses` 明确报 501 |
-| **P4 托管型渠道** ✅ | 统一渠道抽象（内嵌型 + 托管型共用路由/Key池/协议适配）；托管型生命周期（拉起/就绪/重启/杀进程树）；API 路径前缀（`path_prefix`，默认 /v1）；`models_path` 与 `health_path` 分离；配置 v2→v3 迁移；**真实 WorkBuddy 已接入并跑通** | **已完成**：56 项端到端断言全过；真实 wb2api 子进程动态端口 57805、19 模型聚合、`wb/cn:auto` 真实调用 200；上游错误原样透传（`credits<floor` 的 503 原样到达客户端） |
-| **P4.5 new-api 接入** |（注意：/v1 现在要求 Bearer access_key，e2e 已覆盖） | new-api 作为托管型渠道用预设模板接入（模板已备好）；Admin API 自动建渠道/别名；**补齐 `responses` 协议转换** | 面板上增删渠道能实时反映到 new-api |
-| **P5 WorkBuddy 搬迁** | `pool` / `scheduler` / `session` / `upstream` 搬入 `internal/provider/workbuddy`；旧配置自动迁移 | 旧 `config.json` 能被识别迁移，行为不回退 |
-| **P6 额度合集** | `quota_matrix` 聚合端点 + 折叠合集 + 双列表视图 + 下钻 | 两个列表都能一眼回答「还能用哪个模型」 |
-| **P7 额度轮询与自动 ban** | `账号×模型` 可用性矩阵；被动优先探测；定时任务；路由过滤；解 ban 与试探 | 额度耗尽的模型自动退出路由；查询接口挂掉时**不误 ban**；恢复后自动回归 |
-| **P8 打包交付** | 单文件 `ModelMux.exe`；Release 三件套；托管型 provider 按需拉取 UI；`/api/quota` 端点定型 | 新机器双击即用，渠道页能一键添加 provider |
-| **P9 dsh 插件** ⏳ | Cordis 插件包 `dsh-modelmux`：provider 注册 + 额度组件 + 免费判定 | 在 dsh 里能看到 ModelMux 各家模型额度，免费模型只显示「免费」 |
+| 阶段 | 内容 | 可验收标准 | 现状核实（2026-10-03） |
+|---|---|---|---|
+| **P0 骨架** | 新建 `modelmux/` 模块；进程编排器（动态端口、健康检查、退出清理、日志归一、`ports.json`） | 能拉起/关闭一个假 provider，端口动态分配且持久化复用 | ✅ **已完成** |
+| **P1 托盘与生命周期** ⭐ | 窗口子类化拦截 `WM_CLOSE`；Win32 托盘（含 `TaskbarCreated` 重建）；有序退出时序；单实例唤出 | 关窗后进程仍在、托盘图标在；右键「退出」后**进程与所有子进程全部消失、端口全释放、通知区无残留图标**；杀掉 explorer 重启后图标自动恢复 | ✅ **已完成**（`test/gui_check.py` 9 项 + `test/verify_silent_minimize.py` 8 项） |
+| **P2 日志基建** ⭐ | `log/slog` 结构化双通道 + `req_id` 贯穿；面板日志页改为表格 + 链路抽屉 | 4 路日志汇流后每条都能看出处；按 req_id 能串完整链路 | ✅ **已完成** |
+| **P3 自定义渠道** ✅ | 内嵌型 provider 框架（三条协议路径、多 Key 池、模型拉取）+ 添加表单 + 测试连接 + 预设模板 + 无界面模式 | **已完成**：37 项端到端断言全通过；chat 保真直通（含流式）、Anthropic 双向转换（含流式与 tool_calls）；`responses` 明确报 501 | ✅ **已完成** |
+| **P4 托管型渠道** ✅ | 统一渠道抽象（内嵌型 + 托管型共用路由/Key池/协议适配）；托管型生命周期（拉起/就绪/重启/杀进程树）；API 路径前缀（`path_prefix`，默认 /v1）；`models_path` 与 `health_path` 分离；配置 v2→v3 迁移；**真实 WorkBuddy 已接入并跑通** | **已完成**：56 项端到端断言全过；真实 wb2api 子进程动态端口 57805、19 模型聚合、`wb/cn:auto` 真实调用 200；上游错误原样透传（`credits<floor` 的 503 原样到达客户端） | ✅ **已完成** |
+| **P4.5 new-api 接入** | 注意：/v1 现在要求 Bearer access_key，e2e 已覆盖 | new-api 作为托管型渠道用预设模板接入（模板已备好）；Admin API 自动建渠道/别名；**补齐 `responses` 协议转换**；面板上增删渠道能实时反映到 new-api | ◐ **部分未做**（见 §10.1） |
+| **P5 WorkBuddy 搬迁** | `pool` / `scheduler` / `session` / `upstream` 搬入 `internal/provider/workbuddy`；旧配置自动迁移 | 旧 `config.json` 能被识别迁移，行为不回退 | ✅ **已完成**（由 Track 1 收口，另引入 `internal/native/` 与 `SourceNative`） |
+| **P6 额度合集** | `quota_matrix` 聚合端点 + 折叠合集 + 双列表视图 + 下钻 | 两个列表都能一眼回答「还能用哪个模型」 | ⏳ **未做** |
+| **P7 额度轮询与自动 ban** | `账号×模型` 可用性矩阵；被动优先探测；定时任务；路由过滤；解 ban 与试探 | 额度耗尽的模型自动退出路由；查询接口挂掉时**不误 ban**；恢复后自动回归 | ⏳ **未做** |
+| **P8 打包交付** | 单文件 `ModelMux.exe`；Release 三件套；托管型 provider 按需拉取 UI；`/api/quota` 端点定型 | 新机器双击即用，渠道页能一键添加 provider | ◐ **部分未做**（见 §10.1） |
+| **P9 dsh 插件** ⏳ | Cordis 插件包 `dsh-modelmux`：provider 注册 + 额度组件 + 免费判定 | 在 dsh 里能看到 ModelMux 各家模型额度，免费模型只显示「免费」 | ⏳ **未做** |
 
 **建议顺序说明**：
 - **P1 提前到最前**：它改变了「进程何时结束」这个**所有测试都要依赖的前提**——如果留到最后做，前面所有阶段的验收方式都要返工。
 - **P2 提前**：日志基建对后续每个阶段的排查效率都有正收益，而 P0 完成后接口已稳定，无返工风险。
 - **P3 提前**：用**最小工作量先跑通「聚合」这条链路**（OpenRouter 是现成的零成本验证对象），能在 P4/P5 这种重活之前暴露架构问题。
 - **P9 排在最后**：dsh 插件完全依赖 `/api/quota` 与端口发现，主体未完成则无从对接；且它不阻塞任何其他阶段，放最后**返工风险最低**。
+
+### 10.1 现状核实（2026-10-03，逐项到源码验证）
+
+核实方式：按每阶段「可验收标准」里点名的**标志物**到源码 / 测试里检索，**存在且可用**才算完成，不看计划表上的标记。
+
+**已完成：P0–P5**
+
+| 阶段 | 核实到的标志物 |
+|---|---|
+| **P0** | `src/internal/orchestrator/`（`NewPortAllocator` + `ports.json` 持久化复用）；`main.go` 步骤 4 动态端口 + 托管型编排 |
+| **P1** | `src/internal/desktop/`（窗口子类化、`Shell_NotifyIcon`、`TaskbarCreated` 重建）；`test/gui_check.py` 9 项、`test/verify_silent_minimize.py` 8 项 |
+| **P2** | `src/internal/logging/`（`log/slog` 双通道 + ring buffer）；`/api/logs` 与面板日志页 |
+| **P3** | `src/internal/provider/`（`channel.go` / `convert.go` / `keypool.go` / `presets.go` / `registry.go`）+ 无界面模式 |
+| **P4** | 托管型生命周期在 `orchestrator`；`config.go` 的 `managed_providers` 与 v2→v3 迁移 |
+| **P5** | `src/internal/provider/workbuddy/`（pool / scheduler / session / upstream 全数落位）、`src/internal/native/`、`provider.SourceNative` |
+
+**部分未做**
+
+- **P4.5（部分）**
+  - 预设模板：**有** —— `provider/presets.go` 的 `InferManagedPreset`（配 `presets_test.go`）。
+  - Admin API 自动建渠道 / 别名：**无** —— 全仓检索只剩 `web/api_channels.go` 的 `gatewayKindNewAPI` 种类识别与「new-api 支持多实例」豁免，**没有任何调用 new-api Admin API 去建渠道 / 别名的代码**。
+  - `responses` 协议转换：**无** —— `web/v1.go` 对 `responses` 返回 `501 responses_unsupported`；`provider/forward.go` 注释明确写「responses 尚未实现（明确报错，而不是静默走 chat）」。
+  - 另注：本阶段在 `docs/zcode-native-port-plan.md` §2.1 已被**降级为「待决策」**——new-api 现定为唯一有意保留的子进程例外，是否继续做自动建渠道需先决策。
+
+- **P8（部分）**
+  - 单文件 `ModelMux.exe`：**有** —— `tools/release/build.py` 产出约 12.5 MB 单文件（`-trimpath -ldflags=-s -w -H windowsgui`）。
+  - Release 三件套：**有** —— 公开仓库已发 `v0.1.0` / `v0.2.1`。
+  - 托管型 provider 按需拉取 UI：**无** —— 面板渠道页目前只有「预设模板 + 手填路径」，没有「一键拉取 provider」。
+  - `/api/quota` 端点定型：**无** —— 见 P6。
+
+**未做**
+
+- **P6**：全仓**无** `quota_matrix`、**无** `/api/quota` 路由（可对照 `web/server.go` 的路由表逐条核对）。
+- **P7**：全仓**无** `ban_failure_threshold`、**无**自动 ban / 解 ban 逻辑；「查询失败不误 ban」这条风险缓解措施**尚未落地**。
+- **P9**：无 dsh 插件包。
+
+**结论**：ModelMux 本体停在「**P0–P5 完成、P4.5 / P8 部分**」的位置；**P6 / P7 / P9 整块未启动**。若继续本体，入口是 **P6（额度合集）**——它同时是 P7（自动 ban）与 P8（`/api/quota` 定型）的前置，也是 P9（dsh 插件）的硬依赖。
 
 ---
 

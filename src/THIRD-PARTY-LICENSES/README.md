@@ -9,3 +9,4 @@
 | 子目录 | 上游项目 | 许可 | 落位代码 |
 |---|---|---|---|
 | `workbuddy2api-panel/` | linguo2625469/workbuddy2api-panel | MIT | `src/internal/provider/workbuddy/` |
+| `trae2api-web/` | connectedGraph/trae2api-web | MIT | `src/internal/provider/trae/` |

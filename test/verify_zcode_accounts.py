@@ -50,6 +50,24 @@ DL = os.path.join(HOME, "downloads")
 SEED_TOKENS = {"eyJhbGciOiJI.eyJzdWIiOiJhIn0.sigaaa",
                "eyJhbGciOiJI.eyJzdWIiOiJiIn0.sigbbb"}
 
+# ── 可选：把托管渠道的上游从「有状态假网关」换成**真实 Go 实现**（A3 验收口径）──
+#
+# 不设 ZCODE_UPSTREAM_EXE 时一切照旧：假网关自带种子账号与额度，44 项全绿。
+# 设成 zcode2api-go.exe 的路径即切到 Go 实现（见 zcode2api-go 仓库的 A3）。
+#
+# 切过去后**必然有若干项期望值不同**，这不是回归，是两份上游本就不同：
+#   1. Go 实现从空池启动，而 ModelMux 对 account_count === 0 的渠道整体隐藏 ⇒
+#      必须先经代理灌入账号，侧栏入口才会出现（脚本自动灌，见下）。
+#   2. 账号名由 Go 侧按「提供方-序号」自动生成（zai-1 / zai-2），不是假网关的「账号甲/乙」。
+#   3. 刚灌入的账号上游还没查过额度 ⇒ `quota` 是空对象（与靶机一致），面板渲染「—」。
+#   4. A5/A6 尚未实现的分支（JWT 额度刷新 / 领取 / 设备码登录）显式报错 ——
+#      这些步骤改为断言「显式失败」，而不是跳过：把「我们还不支持」也钉成可观测行为。
+UPSTREAM_EXE = os.environ.get("ZCODE_UPSTREAM_EXE") or ""
+GO_MODE = bool(UPSTREAM_EXE)
+# Go 实现要把上游自带面板目录指过去才有多余能力；ModelMux 走的是自己的面板，
+# 这个值只影响 Go 进程自己能不能提供 /admin/*，留空也能跑。
+PANEL_DIR = os.environ.get("ZCODE_PANEL_DIR") or ""
+
 sys.stdout.reconfigure(encoding="utf-8")
 results = []
 
@@ -180,11 +198,34 @@ def main():
         for c in (ch0.get("channels") or []):
             delete(base, "/api/channels?name=" + urllib.parse.quote(c.get("name", "")))
 
-        # ── 托管渠道：ModelMux 拉起假 zcode2api（端口由编排器分配并注入 ZCODE_PORT）
+        # ── 托管渠道：ModelMux 拉起上游（默认假 zcode2api；GO_MODE 下换成 Go 实现）
+        # 端口由编排器分配并经 port_env_var 注入 ZCODE_PORT —— Go 实现读同名变量。
+        if GO_MODE:
+            if not os.path.isfile(UPSTREAM_EXE):
+                print("ZCODE_UPSTREAM_EXE 指向的文件不存在：" + UPSTREAM_EXE)
+                return 1
+            up_home = os.path.join(HOME, "go-upstream")
+            shutil.rmtree(up_home, ignore_errors=True)
+            os.makedirs(up_home, exist_ok=True)
+            up_cmd = UPSTREAM_EXE
+            up_args = ["serve", "--host", "127.0.0.1",
+                       "--data-dir", os.path.join(up_home, "data"),
+                       "--admin-key", ZCODE_ADMIN_KEY,
+                       # 给一个网关 Key：面板的设置页要求 `gateway_key_masked` 非空
+                       # （「密钥以掩码回显」一项），空密钥会渲染成空串。
+                       "--gateway-key", "sk-go-gateway-abcdef123456"]
+            if PANEL_DIR:
+                up_args += ["--panel-dir", PANEL_DIR]
+            up_dir = up_home
+        else:
+            up_cmd = PY
+            up_args = [FAKE_ZCODE, str(ZCODE_PORT)]
+            up_dir = os.path.dirname(FAKE_ZCODE)
+
         st, d = post(base, "/api/channels", {
             "kind": "managed", "name": "", "display_name": "ZCode 网关", "preset": "zcode",
-            "command": PY, "args": [FAKE_ZCODE, str(ZCODE_PORT)],
-            "dir": os.path.dirname(FAKE_ZCODE), "enabled": True,
+            "command": up_cmd, "args": up_args,
+            "dir": up_dir, "enabled": True,
             "port_env_var": "ZCODE_PORT", "health_path": "/meta", "panel_path": "/admin/",
             "model_prefix": "zcode-", "expose": True, "protocol": "chat",
             "models": ["glm-4.6"],
@@ -211,6 +252,17 @@ def main():
         st, d = post(base, "/api/claim/config", {"enabled": True, "at": "12:01",
                                                  "window": 4, "channel": "", "admin_key": ZCODE_ADMIN_KEY})
         check("后台密码已写入（面板代理据此注入 Bearer）", st == 200 and d.get("configured"), f"{st} {d}")
+
+        upq = "/api/channels/" + urllib.parse.quote(ch_name) + "/upstream"
+
+        if GO_MODE:
+            # Go 实现从**空池**启动，而 ModelMux 对 account_count === 0 的托管渠道
+            # 按设计整体隐藏（侧栏入口根本不出现）。所以先经面板代理灌入两个账号；
+            # 种子用与假网关相同的 JWT，导出断言才能原样沿用。
+            st, sd = post(base, upq + "/accounts",
+                          {"provider": "zai", "tokens": sorted(SEED_TOKENS)})
+            check("经面板代理向 Go 实现灌入 2 个种子账号",
+                  st == 200 and sd.get("count") == 2, f"{st} {sd}")
 
         # ── 起浏览器驱动真实界面
         edge = subprocess.Popen([
@@ -284,8 +336,9 @@ def main():
         wait_true("document.querySelectorAll('#zcAccBody tr').length>0", timeout=20)
         check("账号池渲染出 2 个种子账号", rows() == 2, f"rows={rows()}")
         texts = row_texts()
-        check("种子账号名与状态渲染正确（账号甲 / 账号乙）",
-              any("账号甲" in t for t in texts) and any("账号乙" in t for t in texts),
+        seed_names = ("zai-1", "zai-2") if GO_MODE else ("账号甲", "账号乙")
+        check("种子账号名与状态渲染正确（%s）" % " / ".join(seed_names),
+              all(any(n in t for t in texts) for n in seed_names),
               str(texts)[:240])
         check("每行有 4 个行内操作（刷新/停用/编辑/删除）",
               js("document.querySelectorAll('#zcAccBody tr:first-child [data-zop]').length") == 4,
@@ -293,9 +346,19 @@ def main():
         check("账号表头含「操作」列",
               "操作" in (js("document.querySelector('#view-up-zc-accounts thead').textContent") or ""),
               js("document.querySelector('#view-up-zc-accounts thead').textContent"))
-        check("额度列渲染进度条与数字",
-              js("document.querySelectorAll('#zcAccBody .zbar i').length") == 2,
-              js("document.querySelectorAll('#zcAccBody .zbar i').length"))
+        if GO_MODE:
+            # 刚灌入的账号上游还没查过额度 ⇒ `quota` 是空对象（与靶机一致），
+            # 面板渲染成「—」。凭空长出一条 0% 的进度条才是 bug
+            # ——那是假网关自己塞的种子数据。
+            check("无额度数据时渲染「—」而不是空进度条",
+                  js("document.querySelectorAll('#zcAccBody .zbar i').length") == 0
+                  and js("document.querySelectorAll('#zcAccBody td.credits .dim').length") == 2,
+                  f"bars={js('document.querySelectorAll(\"#zcAccBody .zbar i\").length')} "
+                  f"dim={js('document.querySelectorAll(\"#zcAccBody td.credits .dim\").length')}")
+        else:
+            check("额度列渲染进度条与数字",
+                  js("document.querySelectorAll('#zcAccBody .zbar i').length") == 2,
+                  js("document.querySelectorAll('#zcAccBody .zbar i').length"))
         check("统计卡渲染（账号总数 / 启用）",
               js("document.querySelectorAll('#zcAccCards .card-k').length") >= 2,
               js("document.querySelectorAll('#zcAccCards .card-k').length"))
@@ -316,9 +379,19 @@ def main():
                 got = {"__parse_err": str(e)}
         check("导出触发真实下载且是可解析的 JSON", isinstance(got, dict) and "providers" in got,
               f"file={fp} got={str(got)[:160]}")
-        check("导出内容与上游账号池逐字节一致（2 个 JWT token）",
-              isinstance(got, dict) and set((got.get("providers") or {}).get("zai") or []) == SEED_TOKENS,
-              f"providers={str((got or {}).get('providers'))[:200]}")
+        zc_entries = ((got or {}).get("providers") or {}).get("zai") or []
+        if GO_MODE:
+            # 真上游（与 Go 实现）导出的是**对象条目** `{name, mode, secret}`，
+            # 与靶机样本 19-export 一致；假网关宽松地导字符串数组。
+            check("导出内容与上游账号池逐字节一致（2 个 JWT token）",
+                  isinstance(got, dict)
+                  and {e.get("secret") for e in zc_entries if isinstance(e, dict)} == SEED_TOKENS
+                  and {e.get("mode") for e in zc_entries if isinstance(e, dict)} == {"jwt"},
+                  f"providers={str((got or {}).get('providers'))[:200]}")
+        else:
+            check("导出内容与上游账号池逐字节一致（2 个 JWT token）",
+                  isinstance(got, dict) and set(zc_entries) == SEED_TOKENS,
+                  f"providers={str((got or {}).get('providers'))[:200]}")
 
         # ── 领取：预览 → 全部领取
         js("document.getElementById('btnZcClaim').click()")
@@ -326,23 +399,44 @@ def main():
         check("领取弹窗打开", js("!document.getElementById('zcClaimModal').hidden"),
               js("document.getElementById('zcClaimModal').hidden"))
         js("document.getElementById('btnZcClaimPreview').click()")
-        wait_true("document.querySelectorAll('#zcClaimBody tr').length>0", timeout=20)
-        check("预览列出 2 个可领账号",
-              js("document.querySelectorAll('#zcClaimBody tr').length") == 2,
-              js("document.querySelectorAll('#zcClaimBody tr').length"))
-        check("预览提示含账号数与套餐数",
-              "2 个账号" in (js("document.getElementById('zcClaimHint').textContent") or ""),
-              js("document.getElementById('zcClaimHint').textContent"))
-        js("document.getElementById('btnZcClaimAll').click()")
-        wait_true("(document.getElementById('zcClaimMsg').textContent||'').includes('成功')", timeout=25)
-        check("全部领取回执显示成功 2 / 失败 0",
-              "成功 2" in (js("document.getElementById('zcClaimMsg').textContent") or "")
-              and "失败 0" in (js("document.getElementById('zcClaimMsg').textContent") or ""),
-              js("document.getElementById('zcClaimMsg').textContent"))
-        check("领取结果逐账号摊开（2 条明细）",
-              js("document.querySelectorAll('#zcClaimResult .ep-row').length") == 2,
-              js("document.querySelectorAll('#zcClaimResult .ep-row').length"))
-        js("document.getElementById('btnZcClaimOk').click()")
+        if GO_MODE:
+            # 领取要解人机验证（A6），Go 侧显式报错。断言面板确实显示了失败，
+            # 而不是「预览 0 个账号」这种看起来正常、实则静默失败的状态。
+            hit = wait_true("(document.getElementById('zcClaimEmpty').textContent||'')"
+                            ".includes('预览失败')", timeout=25)
+            emsg = js("document.getElementById('zcClaimEmpty').textContent")
+            check("领取预览（属 A5/A6）显式失败而非静默空结果", bool(hit), emsg)
+            st, sd = get(base, upq + "/claim/preview")
+            check("代理链路上确认领取预览显式报「尚未实现」",
+                  st == 501 and "尚未实现" in str(sd.get("detail") or ""), f"{st} {sd}")
+            js("document.getElementById('btnZcClaimAll').click()")
+            hit = wait_true("(document.getElementById('zcClaimMsg').textContent||'')"
+                            ".includes('领取失败')", timeout=25)
+            check("全部领取（属 A5/A6）显式失败而非假装成功",
+                  bool(hit) and "成功" not in (js("document.getElementById('zcClaimMsg').textContent") or ""),
+                  js("document.getElementById('zcClaimMsg').textContent"))
+            st, sd = post(base, upq + "/claim", {})
+            check("代理链路上确认领取显式报「尚未实现」",
+                  st == 501 and "尚未实现" in str(sd.get("detail") or ""), f"{st} {sd}")
+            js("document.getElementById('btnZcClaimOk').click()")
+        else:
+            wait_true("document.querySelectorAll('#zcClaimBody tr').length>0", timeout=20)
+            check("预览列出 2 个可领账号",
+                  js("document.querySelectorAll('#zcClaimBody tr').length") == 2,
+                  js("document.querySelectorAll('#zcClaimBody tr').length"))
+            check("预览提示含账号数与套餐数",
+                  "2 个账号" in (js("document.getElementById('zcClaimHint').textContent") or ""),
+                  js("document.getElementById('zcClaimHint').textContent"))
+            js("document.getElementById('btnZcClaimAll').click()")
+            wait_true("(document.getElementById('zcClaimMsg').textContent||'').includes('成功')", timeout=25)
+            check("全部领取回执显示成功 2 / 失败 0",
+                  "成功 2" in (js("document.getElementById('zcClaimMsg').textContent") or "")
+                  and "失败 0" in (js("document.getElementById('zcClaimMsg').textContent") or ""),
+                  js("document.getElementById('zcClaimMsg').textContent"))
+            check("领取结果逐账号摊开（2 条明细）",
+                  js("document.querySelectorAll('#zcClaimResult .ep-row').length") == 2,
+                  js("document.querySelectorAll('#zcClaimResult .ep-row').length"))
+            js("document.getElementById('btnZcClaimOk').click()")
 
         # ── 新增账号（粘贴 API Key）
         js("document.getElementById('btnZcAdd').click()")
@@ -392,10 +486,23 @@ def main():
 
         # ── 全量刷新（结果走 toast：提示行是「账号摘要」，会被随后的重载覆盖）
         js("document.getElementById('btnZcRefreshAll').click()")
-        hit = wait_true("(document.getElementById('toast').textContent||'').includes('刷新完成')", timeout=25)
-        tmsg = js("document.getElementById('toast').textContent")
-        check("全量刷新回执以 toast 呈现（含刷新数量）",
-              bool(hit) and "刷新" in (tmsg or "") and "个" in (tmsg or ""), tmsg)
+        if GO_MODE:
+            # 池里有两个 JWT 账号 ⇒ 全量刷新必须打上游（属 A5），Go 侧显式报错。
+            # 断言「显式失败」而不是跳过：面板不能出现「刷新完成」这种假回执。
+            hit = wait_true("(document.getElementById('toast').textContent||'').includes('刷新失败')",
+                            timeout=25)
+            tmsg = js("document.getElementById('toast').textContent")
+            check("全量刷新（含 JWT，属 A5）显式失败而非假装成功",
+                  bool(hit) and "刷新失败" in (tmsg or "")
+                  and "刷新完成" not in (tmsg or ""), tmsg)
+            st, sd = post(base, upq + "/accounts/refresh", {"all": True})
+            check("代理链路上确认全量刷新显式报「尚未实现」",
+                  st == 501 and "尚未实现" in str(sd.get("detail") or ""), f"{st} {sd}")
+        else:
+            hit = wait_true("(document.getElementById('toast').textContent||'').includes('刷新完成')", timeout=25)
+            tmsg = js("document.getElementById('toast').textContent")
+            check("全量刷新回执以 toast 呈现（含刷新数量）",
+                  bool(hit) and "刷新" in (tmsg or "") and "个" in (tmsg or ""), tmsg)
         check("提示行仍是账号摘要（刷新结果没有把它污染掉）",
               "个账号" in (js("document.getElementById('zcAccHint').textContent") or ""),
               js("document.getElementById('zcAccHint').textContent"))
@@ -403,7 +510,16 @@ def main():
         # ── 导入（JSON body，不是 multipart）
         js("document.getElementById('btnZcImport').click()")
         time.sleep(0.3)
-        import_payload = {"version": 1, "providers": {"zai": ["sk-imp-a", "sk-imp-b"]}}
+        # 导入格式：真上游（与 Go 实现）只接受**对象条目** `{name, mode, secret}`
+        # ——这正是导出写出来的形状。假网关宽松地也收字符串数组，脚本早先就写了
+        # 字符串；切到 Go 时改成对象条目，与真实契约对齐。
+        if GO_MODE:
+            import_payload = {"version": 1, "providers": {"zai": [
+                {"name": "imp-a", "mode": "apiKey", "secret": "sk-imp-a"},
+                {"name": "imp-b", "mode": "apiKey", "secret": "sk-imp-b"},
+            ]}}
+        else:
+            import_payload = {"version": 1, "providers": {"zai": ["sk-imp-a", "sk-imp-b"]}}
         js("document.getElementById('zcImportText').value=" + json.dumps(json.dumps(import_payload)))
         js("document.getElementById('btnZcImportDo').click()")
         wait_true("document.getElementById('zcImportModal').hidden && "
@@ -431,20 +547,37 @@ def main():
               and js("!document.getElementById('zcTabLogin').hidden"),
               f"paste={js('document.getElementById(\"zcTabPaste\").hidden')}")
         js("document.getElementById('btnZcLoginStart').click()")
-        wait_true("(document.getElementById('zcLoginState').textContent||'').includes('授权成功')", timeout=25)
-        check("登录轮询到「授权成功」",
-              "授权成功" in (js("document.getElementById('zcLoginState').textContent") or ""),
-              js("document.getElementById('zcLoginState').textContent"))
-        wait_true("document.querySelectorAll('#zcAccBody tr').length===5", timeout=20)
-        check("授权成功后账号入池（列表 5 行且含「UI 设备码账号」）",
-              rows() == 5 and row_idx("UI 设备码账号") >= 0,
-              f"rows={rows()} idx={row_idx('UI 设备码账号')}")
+        if GO_MODE:
+            # 设备码登录（A5/A6）Go 侧显式报错：面板应显示「发起失败」，
+            # 而不是停在「等待你在浏览器完成授权…」让用户白等。
+            hit = wait_true("(document.getElementById('zcLoginState').textContent||'')"
+                            ".includes('发起失败')", timeout=25)
+            check("设备码登录发起（属 A5/A6）显式失败而非静默等待",
+                  bool(hit) and "授权成功" not in (js("document.getElementById('zcLoginState').textContent") or ""),
+                  js("document.getElementById('zcLoginState').textContent"))
+            st, sd = post(base, upq + "/login/start", {})
+            # 登录发起按样本走 **502**（`{"detail":"登录初始化失败: …"}`）——上游不可达
+            # 是这条分支的既定形态，A3 用同一个形态承载「需要上游调用（属于 A5）」。
+            # 同时钉住「不伪造 flow_id」：失败体里绝不能出现 flow_id / authorize_url。
+            check("代理链路上确认登录发起显式报错且不伪造 flow_id（502 形态）",
+                  st == 502 and "A5" in str(sd.get("detail") or "")
+                  and "flow_id" not in sd, f"{st} {sd}")
+            js("document.getElementById('btnZcAccClose').click()")  # 关掉弹窗，后续步骤才点得到
+        else:
+            wait_true("(document.getElementById('zcLoginState').textContent||'').includes('授权成功')", timeout=25)
+            check("登录轮询到「授权成功」",
+                  "授权成功" in (js("document.getElementById('zcLoginState').textContent") or ""),
+                  js("document.getElementById('zcLoginState').textContent"))
+            wait_true("document.querySelectorAll('#zcAccBody tr').length===5", timeout=20)
+            check("授权成功后账号入池（列表 5 行且含「UI 设备码账号」）",
+                  rows() == 5 and row_idx("UI 设备码账号") >= 0,
+                  f"rows={rows()} idx={row_idx('UI 设备码账号')}")
 
         # ── 网关设置：从「只读视图」变成面板内可直接修改
         # 三条通路分别验：① 非密项走面板代理；② 监控清空走面板代理；
         # ③ 后台密码走「一次调用同步两处」的原生接口。它们分属不同实现，
         # 混在一起只验一条会漏掉「另一个方向其实没通」。
-        upq = "/api/channels/" + urllib.parse.quote(ch_name) + "/upstream"
+        # （upq 在渠道就绪后已定义。）
 
         # 静态真源：把人引回网关自己面板的旧文案必须消失，新控件必须存在。
         # 注意静态出口是 "/"（服务端把 index.html 挂在根上），不是 "/index.html"。
@@ -490,12 +623,23 @@ def main():
         # ② 监控清空：先确认有数据，清空之后必须真的为空
         st, m0 = get(base, upq + "/monitoring")
         n0 = len(m0.get("entries") or [])
+        if GO_MODE:
+            # Go 侧的监控环形缓冲只由**网关转发**写入，而转发链路属 A4 ⇒ 此刻必然为空。
+            # 这里只能验「通路可用 + 空态形状正确」；写入端随 A4 落地。
+            check("监控接口可读且空态形状正确（entries 是数组、keep 有值）",
+                  st == 200 and isinstance(m0.get("entries"), list)
+                  and int(m0.get("keep") or 0) > 0,
+                  f"{st} keep={m0.get('keep')} entries={type(m0.get('entries')).__name__}")
         st, d = post(base, upq + "/monitoring/clear", {})
         check("通过面板代理清空监控返回成功", st == 200, f"{st} {d}")
         st, m1 = get(base, upq + "/monitoring")
-        check("清空后监控确实为空（n0=%d）" % n0,
-              n0 > 0 and len(m1.get("entries") or []) == 0,
-              f"n0={n0} n1={len(m1.get('entries') or [])}")
+        if GO_MODE:
+            check("清空后监控为空", len(m1.get("entries") or []) == 0,
+                  f"n1={len(m1.get('entries') or [])}")
+        else:
+            check("清空后监控确实为空（n0=%d）" % n0,
+                  n0 > 0 and len(m1.get("entries") or []) == 0,
+                  f"n0={n0} n1={len(m1.get('entries') or [])}")
 
         # ③ 后台密码：一次调用同时落「网关侧」与「本机侧」
         new_key = "sync-key-9911"

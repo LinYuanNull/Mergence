@@ -43,6 +43,44 @@ const claimTimeout = 90 * time.Second
 // 抽成常量并写清出处，避免下次有人「顺手改成 /panel/」而静默 404。
 const claimAdminPath = "/admin/api/claim"
 
+// traeCheckinPath trae 的签到触发接口。
+//
+// 它不是上游原生的路由：上游的 scheduler 只在进程内按整点跑 RunCheckinNow()，
+// 没有 HTTP 入口。这个路径由 ModelMux 的原生装配层（internal/native/trae）
+// 包在 handler 外面补出来，所以它同样落在 /admin/api 前缀下，
+// 走同一条代理路径与同一份凭据。常量与 native/trae.CheckinPath 必须一致。
+const traeCheckinPath = "/admin/api/checkin"
+
+// claimPathFor 该网关的领取/签到接口路径。
+func claimPathFor(kind string) string {
+	if kind == "trae" {
+		return traeCheckinPath
+	}
+	return claimAdminPath
+}
+
+// claimKeyFor 领取/签到用的凭据。
+//
+// 与 `panelAuthKey` 同一条判据（两种 zcode 形态并存，见那里的长注释）：
+//
+//   - **原生型**（SourceNative）：route key（空回落 `zcode`）—— 「后台密码」
+//     与「路由密钥」合并成一处。
+//   - **托管型子进程**（SourceManaged）：它自己的 `ZCODE_ADMIN_KEY`
+//     （ModelMux 侧存在 config.Claim.AdminKey）。
+//
+// 用 `up.Source` 而不是 kind 区分：kind 对两种形态都是 "zcode"。合并前
+// 「后台密码要两处同步、只改一边就整块 401」的故障，在**原生型**上已经消除；
+// 老式子进程渠道保留原行为直到用户迁移。
+func (s *Server) claimKeyFor(kind string, up provider.Upstream) string {
+	if kind == "zcode" {
+		if up.Source == provider.SourceNative {
+			return zcodeAdminKey(up)
+		}
+		return s.claimSettings().AdminKey
+	}
+	return firstKey(up)
+}
+
 // runClaim 执行一次领取：定位渠道 → 发请求 → 翻译回执。
 func (s *Server) runClaim(ctx context.Context, cfg config.ClaimConfig, trigger string) claim.Result {
 	res := claim.Result{At: time.Now(), Trigger: trigger}
@@ -62,12 +100,18 @@ func (s *Server) runClaim(ctx context.Context, cfg config.ClaimConfig, trigger s
 		return res
 	}
 	up := ch.Upstream()
-	if cfg.AdminKey == "" {
-		res.Skipped = "未填写该网关的后台密码（设置页的「后台密码」）"
+	kind := kindOfUpstream(up)
+	key := s.claimKeyFor(kind, up)
+	if key == "" {
+		if kind == "trae" {
+			res.Skipped = "该 Trae 渠道没填 API Key（渠道设置里的「路由密钥」），无法触发签到"
+		} else {
+			res.Skipped = "未填写该网关的后台密码（设置页的「后台密码」）"
+		}
 		return res
 	}
 
-	body, err := s.postClaim(ctx, up.RootURL, cfg.AdminKey)
+	body, err := s.postClaim(ctx, up.RootURL, claimPathFor(kind), key)
 	if err != nil {
 		res.Error = err.Error()
 		return res
@@ -115,7 +159,7 @@ func (s *Server) pickClaimChannel(cfg config.ClaimConfig) (*provider.Channel, er
 	return nil, errNoManagedChannel
 }
 
-// postClaim 调用网关的领取接口。
+// postClaim 调用网关的领取/签到接口。
 //
 // 契约（dengyie/zcode2api，AGPL-3.0，此处仅作进程级 HTTP 调用）：
 //
@@ -126,7 +170,10 @@ func (s *Server) pickClaimChannel(cfg config.ClaimConfig) (*provider.Channel, er
 //
 // 1005「名额用完」时上游会带 next_at（名额恢复时间），原样带回面板——
 // 用户据此知道该几点再试，而不是反复空转领取。
-func (s *Server) postClaim(ctx context.Context, root, adminKey string) (claimResult, error) {
+//
+// trae 的签到接口（见 traeCheckinPath）由 ModelMux 侧补出，回执刻意做成同一形状，
+// 所以这里只有路径不同，解析与翻译逻辑完全共用。
+func (s *Server) postClaim(ctx context.Context, root, path, key string) (claimResult, error) {
 	var out claimResult
 	root = strings.TrimRight(root, "/")
 	if root == "" {
@@ -136,12 +183,12 @@ func (s *Server) postClaim(ctx context.Context, root, adminKey string) (claimRes
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(rctx, http.MethodPost,
-		root+claimAdminPath, bytes.NewReader([]byte(`{}`)))
+		root+path, bytes.NewReader([]byte(`{}`)))
 	if err != nil {
 		return out, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+adminKey)
+	req.Header.Set("Authorization", "Bearer "+key)
 
 	resp, err := upstreamClient.Do(req)
 	if err != nil {
@@ -154,7 +201,7 @@ func (s *Server) postClaim(ctx context.Context, root, adminKey string) (claimRes
 	}
 	if resp.StatusCode == http.StatusUnauthorized ||
 		resp.StatusCode == http.StatusForbidden {
-		// 后台密码错是最常见的原因，单独说清楚，别让用户去猜
+		// 凭据错是最常见的原因，单独说清楚，别让用户去猜
 		return out, errAdminKeyRejected(resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -275,8 +322,9 @@ func (s *Server) claimSettings() config.ClaimConfig {
 
 // kindOfUpstream 判定托管渠道的网关类型。
 //
-// 复用 metrics_api 里的 kindOf（它认 workbuddy），这里补上 zcode——
-// 领取接口的路径按网关而异，认错类型就会把请求打到不存在的路径上。
+// 复用 metrics_api 里的 kindOf（它认 workbuddy），这里补上 zcode 与 trae——
+// 领取/签到接口的路径与凭据来源都按网关而异，认错类型就会把请求打到
+// 不存在的路径上（404）或用错钥匙（401）。
 func kindOfUpstream(up provider.Upstream) string {
 	// 优先用配置里落盘的识别结果：预设已取消，用户还可能把渠道改名成
 	// 「我的网关」这类不含平台字样的名字，届时名称匹配必然落空。
@@ -292,6 +340,8 @@ func kindOfUpstream(up provider.Upstream) string {
 		return "zcode"
 	case strings.Contains(hay, "wb2api"), strings.Contains(hay, "workbuddy"):
 		return "workbuddy"
+	case strings.Contains(hay, "trae"):
+		return "trae"
 	case strings.Contains(hay, "new-api"), strings.Contains(hay, "newapi"):
 		// new-api 是多渠道聚合底座，一个系统里可以跑多个实例，
 		// 平台唯一性校验据此豁免（见 api_channels.go 的 kindTaken）。
@@ -313,7 +363,8 @@ var (
 		return fmt.Errorf("网关返回的不是可识别的领取回执：%s", s)
 	}
 	errAdminKeyRejected = func(code int) error {
-		return fmt.Errorf("后台密码被拒绝（HTTP %d）：请核对设置页填的是该网关的 ZCODE_ADMIN_KEY", code)
+		return fmt.Errorf("凭据被拒绝（HTTP %d）：zcode 请核对设置页的「后台密码」，"+
+			"trae 请核对渠道的「路由密钥」", code)
 	}
 	errClaimStatus = func(code int, body []byte) error {
 		s := strings.TrimSpace(string(body))

@@ -44,14 +44,31 @@ PATH_PATTERNS = [
     ("temp_abs", re.compile(r"(?i)\bC:\\\\?Users\\\\?lcq\\\\?AppData\\\\?Local\\\\?Temp")),
 ]
 
-# 这些文件里出现绝对路径/上游名是正常的（计划文档、许可声明、发布工具）
+# 这些文件里出现绝对路径/上游名是正常的（计划文档、许可声明、发布工具、契约证据）
 ALLOW = {
     "docs/zcode-native-port-plan.md": ["workdir_abs", "user_home"],
     "docs/CHANGELOG.md": ["workdir_abs", "user_home"],
     "docs/ModelMux-设计方案.md": ["workdir_abs", "user_home"],
     "src/THIRD-PARTY-LICENSES/README.md": ["workdir_abs", "user_home"],
     "README.md": ["workdir_abs", "user_home"],
+    # zcode 的契约证据（Track 3 随包落位）：observations.md 逐条记录采样方法与
+    # 采样靶机目录（一个本机绝对路径），与计划文档同性质 —— 是「这份契约从哪来」
+    # 的登记，不是把用户配置写进仓库。其中的凭据一律是**合成值**
+    # （`fixture-token-*` / `fixture-gw-key-*`，见下面 DATA_ALLOW_PREFIXES 说明）。
+    "src/internal/provider/zcode/contract/observations.md": ["workdir_abs", "user_home"],
+    # bodytransform 的 outbound 夹具：note 字段里写了一句复核时用的临时文件路径。
+    # 同属契约定性记录（说明这条样本怎么来的），不含任何真实凭据。
+    "src/internal/provider/zcode/bodytransform/testdata/outbound-requests.json": [
+        "user_home", "temp_abs", "workdir_abs"],
 }
+
+# 契约夹具里的数据文件例外：**.db 是采样靶机写出的 SQLite，store 的「落盘契约」
+# 测试直接拿它做逐字节对齐（`docs/contract/store/` 的结论就来自它）。
+# 已核验内容全部为合成值：账号 token 一律 `fixture-token-*`、网关密钥
+# `fixture-gw-key-abcdef`、后台密码 `1234`（采样机已知测试值），不含任何真实凭据。
+DATA_ALLOW_PREFIXES = (
+    "src/internal/provider/zcode/store/testdata/",
+)
 
 # 测试夹具里的 key 是显式占位串（abcdefghijklmnop / xxxx / zzzz / 0000），
 # 不是真凭据。豁免按「文件 + 命中行必须含占位符」双条件，避免将来误放真 key。
@@ -59,8 +76,13 @@ TEST_PLACEHOLDER = {
     "test/drive_ui.py": True,
     "test/gui_check.py": True,
     "test/shot_tools/shots.py": True,
+    # zcode 账号面板 e2e 的 GO_MODE 分支：给上游起一个网关 Key，好让面板的
+    # 「密钥以掩码回显」那一项有值可渲染。值是写死的假串（`abcdef` 占位），
+    # 不是任何真实凭据。
+    "test/verify_zcode_accounts.py": True,
 }
-PLACEHOLDER_MARK = re.compile(r"x{4,}|z{4,}|0{4,}|abcdefghijklmnop|placeholder|example", re.I)
+PLACEHOLDER_MARK = re.compile(
+    r"x{4,}|z{4,}|0{4,}|abcdefghijklmnop|abcdef|placeholder|example|fixture", re.I)
 
 # 数据类扩展名，出现在导出范围里就是意外
 DATA_SUFFIX = {".db", ".sqlite", ".sqlite3", ".exe", ".syso", ".zip", ".log", ".key", ".pem"}
@@ -100,7 +122,8 @@ def main() -> int:
         ext = os.path.splitext(low)[1]
 
         if ext in DATA_SUFFIX and low not in DATA_ALLOW_FILES:
-            findings.append({"kind": "data_file", "file": rel, "line": 0, "detail": ext})
+            if not any(rel.startswith(p) for p in DATA_ALLOW_PREFIXES):
+                findings.append({"kind": "data_file", "file": rel, "line": 0, "detail": ext})
 
         try:
             with open(full, "rb") as fh:

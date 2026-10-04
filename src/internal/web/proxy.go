@@ -230,9 +230,9 @@ func firstKey(up provider.Upstream) string {
 //
 // 不读配置里的 panel_api_prefix：老配置里 zcode 渠道存的是 /panel/api（错的，
 // 当年照抄 workbuddy 预设留下），而这是网关自己的固定契约——写在这里比让
-// 每个用户手改配置可靠。
+// 每个用户手改配置可靠。trae 同理：它的管理面固定在 /admin/api。
 func panelAPIPrefixFor(kind, configured string) string {
-	if kind == "zcode" {
+	if kind == "zcode" || kind == "trae" {
 		return "/admin/api"
 	}
 	return configured
@@ -240,13 +240,39 @@ func panelAPIPrefixFor(kind, configured string) string {
 
 // panelAuthKey 取管理通道的凭据。
 //
-// 管理通道的凭据来源与转发通道不同：zcode2api 的管理 API 认的是它自己的
-// ZCODE_ADMIN_KEY（ModelMux 侧存在 config.ClaimConfig.AdminKey），而不是
-// 渠道 route 的 APIKey —— 后者是转发通道的凭据。用错来源会得到 401，
-// 而不是「功能没实现」，排查时容易误判成接口不存在。
+// 两种 zcode 形态并存（迁移期），凭据来源不同，**必须分开**：
+//
+//   - **原生型**（SourceNative，Track 3 内置实现）：后台密码 = 渠道 route key
+//     （原生装配层把同一个值同时注入管理面与账号库 meta，见 native/zcode 的
+//     「密码合并」）。空 route key 回落契约默认值 `zcode`。
+//   - **托管型子进程**（SourceManaged，老配置里 python cli.py serve 那套）：
+//     认的是它自己的 `ZCODE_ADMIN_KEY`（ModelMux 侧存在 config.Claim.AdminKey），
+//     route key 是转发通道的凭据，拿它去管理面会 401。老渠道的用户还没迁移，
+//     这条不能砍。
+//
+// 判据用 `up.Source` 而不是 kind：kind 对两种形态都是 "zcode"
+// （见 config.ManagedProvider 的 Mode 注释——老配置没有 Mode 字段，
+// 只能是子进程，正是为了让这种情况下不误判成原生）。
 func (s *Server) panelAuthKey(up provider.Upstream) string {
 	if kindOfUpstream(up) == "zcode" {
-		return s.claimSettings().AdminKey
+		if up.Source == provider.SourceNative {
+			return zcodeAdminKey(up) // 内置原生：route key（空回落 zcode）
+		}
+		return s.claimSettings().AdminKey // 老式子进程：ZCODE_ADMIN_KEY
 	}
 	return firstKey(up)
+}
+
+// zcodeAdminKey zcode 渠道合并后的后台密码：route key，空则回落契约默认值。
+//
+// 默认值字面量与 native/zcode 的 `constants.FallbackAdminKey` 同源；
+// 这里不 import 原生实现包（web 层不该依赖某个具体 provider），
+// 故用一处注释把两边的出处钉住：改动任一处都要同步。
+const zcodeFallbackAdminKey = "zcode"
+
+func zcodeAdminKey(up provider.Upstream) string {
+	if k := firstKey(up); k != "" {
+		return k
+	}
+	return zcodeFallbackAdminKey
 }

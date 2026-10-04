@@ -44,21 +44,25 @@ func TestInferManagedPreset(t *testing.T) {
 			want:       "workbuddy",
 		},
 		{
-			name:       "trae：node + server.js + /healthz，不能误判成 workbuddy",
+			name:       "trae 老配置（node + server.js）：判不出，返回空（不猜）",
 			command:    "node",
 			args:       []string{"server.js"},
 			healthPath: "/healthz",
-			// 题目给的最小信号未含端口；不填也应靠 args+command 压过 workbuddy。
 			portEnvVar: "",
-			want:       "trae",
+			// trae 已改为内置原生（Mode=native，无 command）。老配置的 command 是
+			// 解释器名 `node`，不具区分度，**刻意不登记为 LegacyCommands**——
+			// 登记了会把任何用 node 启动的渠道（含用户自建网关）都误判成 trae，
+			// 那比判不出更糟（用户一保存就把自定义渠道变成内置 trae）。
+			// 所以这里的正确结果是「判不出」，让面板停在下拉框第一项由用户自己选。
+			want: "",
 		},
 		{
-			name:       "trae：带上端口信号更稳",
+			name:       "trae 老配置带端口信号：同样判不出（不猜）",
 			command:    "node",
 			args:       []string{"server.js"},
 			healthPath: "/healthz",
 			portEnvVar: "PORT",
-			want:       "trae",
+			want:       "",
 		},
 		{
 			name:       "health_path 不认识 → 判不出，返回空",
@@ -70,10 +74,11 @@ func TestInferManagedPreset(t *testing.T) {
 		},
 		{
 			name: "空 command + /healthz → custom-managed",
-			// 判断依据：command 归一化后为空，只有 custom-managed 的 command 也是空，
-			// 于是它额外拿到 command 命中的 +2；workbuddy 虽同样命中 health/args，
-			// 但 command 为空对不上 wb2api，得分更低。空命令的托管进程本来就最像
-			// 「自定义托管进程（空白）」这个模板，判成它是合理且对面板更有用的结果
+			// 判断依据：command 归一化后为空，能命中这条的只剩「子进程型、且从不需要
+			// command」的模板，即 custom-managed，它额外拿到 command 命中的 +2。
+			// 两个模板被排除：workbuddy 带 LegacyCommands（曾经有 command 的形态），
+			// trae 是原生型（有明确身份，回显走 kind 而非推断）。空命令的托管进程本来
+			// 就最像「自定义托管进程（空白）」，判成它是合理且对面板更有用的结果
 			// （否则下拉框又会停在第一个选项 workbuddy 上，正是要修的 bug）。
 			command:    "",
 			args:       nil,
@@ -83,10 +88,12 @@ func TestInferManagedPreset(t *testing.T) {
 		},
 		{
 			name: "最高分并列 → 返回空（不猜）",
-			// command 为空、args 命中 server.js：trae = health3 + args2 = 5；
-			// custom-managed = health3 + command2 = 5，两者并列，无法区分。
-			command:    "",
-			args:       []string{"server.js"},
+			// 未知 command + /healthz：三个 /healthz 候选（workbuddy / trae /
+			// custom-managed）都只命中门槛的 +3，谁也没有额外信号，并列无法区分。
+			// 这是「判不出」的另一条路径——不是门槛淘汰（health_path 认识），
+			// 而是信号不足。此时宁可返回空让用户自己选，也不随机挑一个。
+			command:    "foo.exe",
+			args:       nil,
 			healthPath: "/healthz",
 			portEnvVar: "",
 			want:       "",

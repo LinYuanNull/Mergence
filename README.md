@@ -75,6 +75,10 @@ modelmux/
 │     ├─ logging/        结构化日志：内存环 + 滚动文件
 │     ├─ orchestrator/   托管型 provider 的子进程生命周期与端口分配（杀树、先等真退出）
 │     ├─ provider/       内嵌型渠道：路由、协议适配、Key 池、连接测试
+│     │  ├─ workbuddy/   内置原生实现（MIT 上游照搬内嵌）
+│     │  ├─ trae/        内置原生实现（MIT 上游照搬内嵌）
+│     │  └─ zcode/       内置原生实现（按契约**独立重写**，无上游代码）
+│     ├─ native/         进程内原生装配层：按 kind 把上面的实现装进本进程
 │     ├─ metrics/        用量计量与定价
 │     ├─ claim/          限时套餐的定时领取
 │     ├─ desktop/        WebView2 壳、托盘、单实例、有序退出
@@ -119,9 +123,15 @@ modelmux/
 这三条是硬约束，改动时不能破：
 
 1. **对外契约只有一份**——OpenAI Chat Completions。任何上游的协议差异都在 `src/internal/provider` 的适配层吸收，不对外暴露第二套格式。
-2. **不 `import` AGPL 代码**。AGPL 项目只允许**进程级**调用：它是独立子进程，不构成衍生作品。
-   MIT 上游则可以**照搬源码内嵌**（须保留其版权声明，许可原文集中放在 `src/THIRD-PARTY-LICENSES/`），
-   照搬来的那部分不改变本项目自身的 MIT。
+2. **工作方式分两类，都不引入第三方许可负担**。
+   - **照搬 MIT 上游源码**（`workbuddy` / `trae`）：须保留其版权声明，许可原文集中放在
+     `src/THIRD-PARTY-LICENSES/`；照搬来的那部分不改变本项目自身的 MIT。
+   - **独立重写**（`zcode`）：上游 `dengyie/zcode2api` 是 AGPL-3.0，**不能照搬**，
+     因此按实测契约**从零重写**成 Go（`src/internal/provider/zcode/`）。
+     本仓库里没有任何上游代码，所以也不需要它的许可原文。
+
+   两种方式都**不是**上游 AGPL 代码，因此都可内嵌且不改变 ModelMux 的 MIT。
+   AGPL 项目（`new-api`）仍只允许**进程级**调用：它是独立子进程，不构成衍生作品。
 3. **不随包分发第三方二进制**。托管型 provider 由用户自行获取，本项目不分发。
 
 配套的工程约定：
@@ -161,15 +171,18 @@ modelmux/
 | 预设 | 项目 | 运行方式 | 说明 | 许可 |
 |---|---|---|---|---|
 | `workbuddy` | **[WorkBuddy 2 API](https://github.com/linguo2625469/workbuddy2api-panel)** | **进程内原生** | 把 CodeBuddy 账号变成 OpenAI 兼容接口的多账号网关：OAuth 登录、账号池三因子加权轮转、分级熔断与冷却、会话粘性。**已内置**，不需要 `wb2api.exe`；把「数据目录」指到原 wb2api 目录即可沿用已登录的账号。 | MIT |
-| `zcode` | **[zcode2api](https://github.com/dengyie/zcode2api)** | 独立子进程 | ZCode 账号运营 + 双协议网关一体机：账号池轮询、额度监控、限时套餐领取，同时对外提供 Anthropic Messages 与 OpenAI Chat Completions。Python 项目，启动命令 `python cli.py serve`，端口环境变量 `ZCODE_PORT`。 | AGPL-3.0 |
+| `zcode` | **[zcode2api](https://github.com/dengyie/zcode2api)** | **进程内原生** | ZCode 账号运营 + 双协议网关一体机：账号池轮询、额度监控、限时套餐领取、设备码登录，同时对外提供 Anthropic Messages 与 OpenAI Chat Completions。**已内置**（按实测契约**独立重写**，见下方说明），不需要 Python 环境；把「数据目录」指到原 zcode2api 的 `data/` 即可沿用已登录的账号。 | AGPL-3.0（上游）/ 本项目为独立实现 |
 | `new-api` | **[new-api](https://github.com/QuantumNous/new-api)** | 独立子进程 | 多渠道聚合与分发底座。启动命令 `new-api.exe`，端口环境变量 `PORT`。 | AGPL-3.0 |
-| `trae` | **[Trae](https://www.trae.ai)** 本地网关 | 独立子进程 | 把 Trae IDE 的模型能力暴露成本地 OpenAI 兼容端点。启动命令 `node server.js`；具体网关实现由使用者自行选择。 | 随所选项目 |
+| `trae` | **[trae2api-web](https://github.com/connectedGraph/trae2api-web)** | **进程内原生** | 把 Trae IDE 的模型能力暴露成本地 OpenAI 兼容端点：账号池调度、冷却状态机、每日签到与设备码/回调登录闭环。**已内置**，不需要 `node server.js`；登录回调需要一个固定端口（默认 `18080`，见数据目录下的 `config.json`）。 | MIT |
 | `custom-managed` | 自定义进程 | 独立子进程 | 任何能用环境变量指定端口、且暴露 OpenAI 兼容端点的可执行程序。 | — |
 
-> `workbuddy` 是**照搬上游 MIT 源码**内嵌的实现（上游文件头与版权声明逐字保留），
+> `workbuddy` 与 `trae` 都是**照搬上游 MIT 源码**内嵌的实现（上游文件头与版权声明逐字保留），
 > 许可原文见 [`src/THIRD-PARTY-LICENSES/`](src/THIRD-PARTY-LICENSES/)。
+> `zcode` 是**独立重写**：上游 `dengyie/zcode2api`（AGPL-3.0）只作为**契约来源**
+> （在其上采样出 HTTP / 落盘 / 出站三类契约），本项目按契约从零实现，
+> 仓库里没有任何上游代码，因此 `src/THIRD-PARTY-LICENSES/` 里**没有** zcode 目录。
 > 表中其余项目都是**独立程序，由使用者自行获取与部署**：ModelMux **不包含也不分发**它们的二进制，
-> AGPL 项目仅以独立进程方式调用、不构成衍生作品。
+> AGPL 上游（`new-api`）仅以独立进程方式调用、不构成衍生作品。
 
 ### 内嵌型预设（进程内转发）
 
@@ -191,10 +204,10 @@ modelmux/
 
 托管型渠道有三种来源方式，与许可无关、只取决于上游的获取成本：
 
-- **MIT 上游照搬源码内嵌**（如 `workbuddy`）：逐字保留上游文件头与版权声明，许可原文集中放在
+- **MIT 上游照搬源码内嵌**（如 `workbuddy`、`trae`）：逐字保留上游文件头与版权声明，许可原文集中放在
   [`src/THIRD-PARTY-LICENSES/`](src/THIRD-PARTY-LICENSES/)，照搬部分不改变本项目自身的 MIT。
-- **自己独立重写**（规划中的 `zcode`）：仓库里不含任何上游代码，可内嵌。
-- **AGPL 上游仅进程级调用**（当前的 `zcode2api`、`new-api`）：ModelMux 只把已存在于本机的程序
+- **自己独立重写**（如 `zcode`）：按实测契约从零实现，仓库里不含任何上游代码，可内嵌。
+- **AGPL 上游仅进程级调用**（当前的 `new-api`）：ModelMux 只把已存在于本机的程序
   作为子进程拉起，**不包含也不分发**其二进制，也不代其上游服务授予任何权利，
   不构成衍生作品；各项目自身的免责声明同样适用。
 
@@ -298,6 +311,8 @@ python test/verify_layout_ui.py    # 侧栏 / 概览拆分 / 渠道嵌套编辑
 python test/verify_pick_ui.py      # 拉取模型全选与结果弹窗
 python test/verify_theme.py        # 首帧主题（防亮暗闪烁）
 python test/verify_claim.py        # 限时套餐定时领取链路
+python test/verify_zcode_accounts.py  # zcode 账号面板（托管型子进程 + 假网关）
+python test/verify_zcode_native.py    # zcode 内置原生（ModelMux 自己装配，无外部进程）
 python test/gui_check.py           # 托盘与窗口生命周期
 python test/check_sources.py       # 源码级不变式（内联 style、通知 API 是否被重新引入）
 python test/verify_silent_minimize.py  # 最小化 / 隐藏不得产生系统通知
@@ -308,7 +323,7 @@ python test/verify_proxy_real.py   # 真实 wb2api 账号管理代理（用你�
 
 | 脚本 | 前置条件 |
 |---|---|
-| `verify.py` / `verify_claim.py` / `verify_pick_ui.py` / `gui_check.py` | 使用隔离的 `MODELMUX_HOME`，**不会动你的真实配置** |
+| `verify.py` / `verify_claim.py` / `verify_pick_ui.py` / `gui_check.py` / `verify_zcode_native.py` | 使用隔离的 `MODELMUX_HOME`，**不会动你的真实配置** |
 | `verify_layout_ui.py` / `verify_side_console.py` / `verify_upstream_ui.py` / `verify_theme.py` | 需要**本机已有一个实例在跑**（默认 `http://127.0.0.1:1234/`） |
 | `gui_check.py` | 需要**独占**：机器上不能有其它 ModelMux 实例，否则会被单实例逻辑唤出并退出 |
 | `verify_workbuddy.py` | ⚠️ 会**写你的真实配置**，慎跑 |
@@ -347,7 +362,7 @@ Go 依赖：
 | `github.com/jchv/go-winloader` | ISC |
 | `golang.org/x/sys` | BSD-3-Clause |
 
-**托管型 provider 与面板里出现的上游服务**分两类：MIT 上游照搬源码内嵌（`workbuddy`，
+**托管型 provider 与面板里出现的上游服务**分两类：MIT 上游照搬源码内嵌（`workbuddy`、`trae`，
 版权声明逐字保留），其余是独立程序、由使用者自行获取，本项目**不包含也不分发**其二进制。
 各项目的链接、许可与说明见[已并入的 Provider](#已并入的-provider)；
 照搬部分的许可原文见 [`src/THIRD-PARTY-LICENSES/`](src/THIRD-PARTY-LICENSES/)，

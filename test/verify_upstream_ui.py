@@ -88,10 +88,12 @@ def main():
         # ── 模型与档位（顺序 / 倍率 / 档位 / 能力）──────────
         js("setView('up-models')")
         time.sleep(3.5)
-        mrows = js("document.querySelectorAll('#mdBody tr').length")
-        check("模型表渲染 19 个模型", mrows == 19, f"rows={mrows}")
-        dom = js("[...document.querySelectorAll('#mdBody tr .nm')].map(x=>x.textContent)")
         up = js("(UP.models||[]).map(m=>m.id)")
+        n_up = len(up) if isinstance(up, list) else -1
+        mrows = js("document.querySelectorAll('#mdBody tr').length")
+        check(f"模型表渲染出全部 {n_up} 个模型（与上游条数一致）",
+              mrows == n_up and n_up > 0, f"rows={mrows} up={n_up}")
+        dom = js("[...document.querySelectorAll('#mdBody tr .nm')].map(x=>x.textContent)")
         check("默认排序保持上游返回顺序（不重排）", dom == up, f"dom[:3]={dom[:3]} up[:3]={up[:3]}")
         check("倍率已清洗（无 '0.03 credits' 这类残留）",
               js("!/credits/.test(document.getElementById('mdBody').textContent)"),
@@ -118,8 +120,8 @@ def main():
         check("按能力筛选可用（视觉）", vis and vis > 0, f"vision={vis}")
         js("document.getElementById('mdReset').click()")
         time.sleep(0.5)
-        check("重置后回到全部 19 个",
-              js("document.querySelectorAll('#mdBody tr').length") == 19,
+        check(f"重置后回到全部 {n_up} 个",
+              js("document.querySelectorAll('#mdBody tr').length") == n_up,
               js("document.querySelectorAll('#mdBody tr').length"))
         shot(ws, "up_models")
 

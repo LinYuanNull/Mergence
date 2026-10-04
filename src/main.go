@@ -38,7 +38,9 @@ import (
 	// 为什么放在 main 而不是 orchestrator 里：编排器只需要知道「有个 kind 要装配」，
 	// 不该依赖具体上游（它要能同时装 workbuddy / zcode / trae，而这些只有 main
 	// 知道这一版带了哪些）。装配点集中在这里，加一个原生实现就是加一行导入。
+	_ "modelmux/internal/native/trae"
 	_ "modelmux/internal/native/workbuddy"
+	_ "modelmux/internal/native/zcode"
 )
 
 const appTitle = "ModelMux"

@@ -2,7 +2,7 @@
 
 本项目的版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [0.3.0] - 2026-10-03
+## [0.3.0] - 2026-10-04
 
 **托管渠道新增「进程内原生」运行方式，workbuddy 渠道不再需要外部 exe。**
 对外契约与配置格式**向后兼容** —— 升级后旧配置原样可用，未改过的渠道行为不变。
@@ -20,7 +20,28 @@
 - **workbuddy 渠道改为进程内原生**（`linguo2625469/workbuddy2api-panel`，MIT 照搬内嵌）。
   面板新增 **数据目录** 入口，指到原 wb2api 目录（含 `auths/` 与 `config.json`）
   即可**沿用已登录的账号**，不需要重新登录。
+- **新增 trae 渠道（进程内原生）**（`connectedGraph/trae2api-web`，MIT 照搬内嵌）。
+  账号池调度、冷却状态机、每日签到与设备码/回调登录闭环都由内置实现承担，
+  不再需要 `node server.js`。管理面固定在 `/admin/api`，凭据取渠道的**路由密钥**
+  （与 zcode 用后台密码不同，见下）；登录回调需要一个固定端口（默认 `18080`，
+  见数据目录下的 `config.json`）。
+  「限时套餐自动领取」会定时触发它内部的签到 —— 上游原本只在进程内按整点跑
+  `RunCheckinNow()`、**没有 HTTP 入口**，由原生装配层在 handler 外面补出
+  `POST /admin/api/checkin`，因此复用同一条代理路径与同一份凭据。
 - 第三方许可原文集中存放于 `src/THIRD-PARTY-LICENSES/`，与本项目自身的 MIT `LICENSE` 分区。
+- **zcode 渠道改为进程内原生，且是「独立重写」而非照搬**。
+  上游 `dengyie/zcode2api`（AGPL-3.0）**不能照搬**，因此先把它的可观测行为固化成
+  三类契约（HTTP 25 路由 / SQLite 落盘 / 出站端点），再按契约**从零重写**成 Go
+  （`src/internal/provider/zcode/`，装配层在 `src/internal/native/zcode/`）。
+  仓库里**没有任何上游代码**，所以 `src/THIRD-PARTY-LICENSES/` 里没有 zcode 目录。
+  覆盖能力：账号池（SQLite，落盘契约逐字节兼容）、额度查询、限时套餐领取、
+  设备码登录、验证码（自写 CDP 客户端 + 用时现解）、Anthropic Messages 与
+  OpenAI Chat Completions 双协议。不再需要 Python 环境。
+
+  > **密码只剩一处**（本次最大的简化收益）：独立部署时后台密码在网关库与本机
+  > 配置各存一份，「只改一边就整块 401 + 定时领取失效」是它的经典故障。
+  > 内嵌后**渠道的「路由密钥」就是唯一真源**（留空用默认 `zcode`），
+  > 原生装配层在每次启动时用它覆盖账号库里的 `admin_key`，改一处即全生效。
 
 ### 变更
 
@@ -29,6 +50,12 @@
   表单在原生型下自动隐藏子进程专有字段（启动命令、参数、工作目录、端口环境变量、固定端口、就绪超时）。
 - `web/upstream.js` 仍按 `source === 'managed'` 判定视图，因此原生型在 UI 上归一为托管型，
   面板形态与子进程型完全一致。
+- **管理面/领取凭据的来源按运行形态区分**（`panelAuthKey` / `claimKeyFor`）：
+  原生型 zcode 取渠道 route key（空则默认 `zcode`）；托管型子进程仍取
+  `config.Claim.AdminKey` —— 老配置里 `python cli.py serve` 的渠道尚未迁移，
+  它的管理面认的是自己的 `ZCODE_ADMIN_KEY`，拿 route key 去会 401。
+- **改后台密码**：原生型只改一次（面板代理 `PUT /admin/api/settings` 后同步
+  渠道 route key）；老式子进程保留原「改两处」语义。
 
 ### 修复
 
@@ -45,13 +72,16 @@
 - 新增 `tools/release/scan_secrets.py`：提交前扫描导出范围内的个人路径痕迹、
   疑似密钥与误纳入的数据文件；豁免按「文件 + 行内占位符」双条件，放行测试夹具里的
   假 key 而不会放过仿真 key。
-- 全量回归：`verify.py` 121 项、上游控制台 51 项、侧栏控制台 57/59、布局 32/33、
+- 全量回归：`verify.py` 121 项、上游控制台 51 项、侧栏控制台 59 项、布局 38 项、
   zcode 账号 44 项、拉取模型 22 项、首帧主题 16 项、限时领取 11 项、
-  GUI 生命周期 9 项、静默最小化 8 项、源码不变式 8 项。
+  GUI 生命周期 全部通过、静默最小化 8 项、源码不变式 8 项、
+  **原生 zcode 专项 29 项（本次新增 `test/verify_zcode_native.py`）**。
   侧栏与布局各有 1~2 项依赖 **zcode 账号池非空**（账号须用户自己做 OAuth），
   在空池下按设计隐藏对应卡片，属数据条件而非回归。
 - 验收基线：`go build` / `go vet` / `gofmt -l` 零输出，`go test ./...` 全通过，
   `build.py --check` 确认 `web/` 与 `src/internal/assets/` 逐字节一致（7 个文件）。
+- **前端零改动**：Track 3 全程未编辑 `web/` 下任何文件（`web/zcode.js` 仍为 48,956 B），
+  证明「保留 `/api/channels/zcode/upstream/<rest>` URL 形态、只换实现」这一设计成立。
 
 ## [0.2.1] - 2026-10-03
 
