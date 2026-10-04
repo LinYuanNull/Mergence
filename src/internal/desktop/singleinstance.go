@@ -20,7 +20,7 @@ import (
 
 // 用 Local\ 而不是 Global\：桌面应用按会话隔离即可，且 Global\ 需要
 // SeCreateGlobalPrivilege，普通用户下可能直接失败。
-const singleInstanceMutex = `Local\ModelMux.SingleInstance`
+const singleInstanceMutex = `Local\Mergence.SingleInstance`
 
 // instanceMutexName 返回**本安装目录专属**的互斥体名。
 //

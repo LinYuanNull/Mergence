@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
 )
 
 // stubAccounts 是最小的账号池替身（`store.Store` 只用到 `List`）。

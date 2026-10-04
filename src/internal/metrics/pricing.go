@@ -1,6 +1,6 @@
 // pricing.go 模型价格表：token → 费用。
 //
-// 为什么需要它：概览要显示「API 费用」，而 ModelMux 只是网关，
+// 为什么需要它：概览要显示「API 费用」，而 Mergence 只是网关，
 // 上游不会告诉你这次调用花了多少钱。费用只能由「本地记的 token × 已知单价」
 // 推算。所以这张表是**唯一的估算来源**，它的可信度直接决定费用数字的可信度。
 //
@@ -266,7 +266,7 @@ var familyPrices = []struct {
 // builtinPriceDate 内置价格表的采集时间。
 //
 // 面板上要显示它：价格会变，用户看到费用不对时第一反应应该是
-// 「表旧了」，而不是「ModelMux 算错了」。
+// 「表旧了」，而不是「Mergence 算错了」。
 const builtinPriceDate = "2026-10"
 
 // BuiltinPriceDate 返回内置价格表采集时间。

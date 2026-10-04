@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/auth"
 )
 
 // pendingState pending 登录状态。

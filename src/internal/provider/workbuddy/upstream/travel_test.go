@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // travelPath 断言请求打到 growth 域的正确路径（BASE 走 chatBase，无 /v2 前缀）。

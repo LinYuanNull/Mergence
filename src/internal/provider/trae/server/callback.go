@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/provider/trae/upstream"
+	"mergence/internal/provider/trae/upstream"
 )
 
 // appVersion 与 login.sh 保持一致；如未来 upstream.IdeVersion 升级，这里同步即可。

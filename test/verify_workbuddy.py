@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把真实的 WorkBuddy 网关（wb2api.exe）作为「托管型渠道」接入 ModelMux，并验证。
+"""把真实的 WorkBuddy 网关（wb2api.exe）作为「托管型渠道」接入 Mergence，并验证。
 
 这是把「P5 搬迁」换成「托管桥接」之后要做的那一次真机验证：
 不搬 wb2api 的源码，只把它当成一个独立进程接进路由，看整条链路能不能通。
@@ -19,13 +19,13 @@ import urllib.request
 
 # 项目根：由本文件位置推导（test/ 的上一层），不写死本机绝对路径。
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.join(ROOT, "ModelMux.exe")
+EXE = os.path.join(ROOT, "Mergence.exe")
 
 
-# 真实数据目录：与 internal/config.DataDir() 同序 —— MODELMUX_HOME
-# → exe 同级（实测可写，便携形态的默认）→ %LOCALAPPDATA%\ModelMux。
+# 真实数据目录：与 internal/config.DataDir() 同序 —— MERGENCE_HOME
+# → exe 同级（实测可写，便携形态的默认）→ %LOCALAPPDATA%\Mergence。
 def real_home():
-    v = os.environ.get("MODELMUX_HOME", "").strip()
+    v = os.environ.get("MERGENCE_HOME", "").strip()
     if v:
         return v
     try:
@@ -33,11 +33,11 @@ def real_home():
             pass
         return ROOT
     except OSError:
-        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "ModelMux")
+        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "Mergence")
 
 
 HOME = real_home()
-CFG = os.path.join(HOME, "config", "modelmux.json")
+CFG = os.path.join(HOME, "config", "mergence.json")
 
 WB_DIR = os.environ.get(
     "WB_DIR", os.path.join(os.path.dirname(ROOT), "workbuddy2api-panel"))
@@ -73,7 +73,7 @@ WB_PROVIDER = {
     "env": {
         # 账号目录沿用 wb2api 自己的（账号是用户资产，不该复制一份）；
         # 但池状态另指一份，避免与单独运行的 wb2api 实例互相覆盖。
-        "WB2A_STATE_FILE": "./data/state.modelmux.json",
+        "WB2A_STATE_FILE": "./data/state.mergence.json",
     },
 }
 
@@ -113,14 +113,14 @@ def main():
     json.dump(cfg, open(CFG, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print("已把 WorkBuddy 写入托管型渠道配置")
 
-    log = os.path.join(HOME, "data", "logs", "modelmux.log")
+    log = os.path.join(HOME, "data", "logs", "mergence.log")
 
     # 日志是**累积**的：只看本次启动之后新增的部分。
     # 不然会扫到上一次运行留下的端口，连过去必然是「渠道列表里没有 workbuddy」。
     start_offset = os.path.getsize(log) if os.path.isfile(log) else 0
 
     env = dict(os.environ)
-    env["MODELMUX_HEADLESS"] = "1"
+    env["MERGENCE_HEADLESS"] = "1"
     mm = subprocess.Popen([EXE], env=env)
     try:
         port = None
@@ -136,10 +136,10 @@ def main():
                         port = int(m.group(1))
             time.sleep(0.4)
         if not port:
-            print("没取到 ModelMux 端口，进程是否退出？")
+            print("没取到 Mergence 端口，进程是否退出？")
             return 1
         base = f"http://127.0.0.1:{port}"
-        print("ModelMux 端口 =", port)
+        print("Mergence 端口 =", port)
 
         # /v1 现在要求 Bearer：先取自动生成的 Key
         st, d = req("GET", f"http://127.0.0.1:{port}/api/status")
@@ -189,7 +189,7 @@ def main():
             print("没有拉到任何 wb/ 模型 —— 账号可能未加载或上游目录为空")
             return 1
 
-        # 真实请求：max_tokens=1，验证整条链路（ModelMux → wb2api → WorkBuddy）
+        # 真实请求：max_tokens=1，验证整条链路（Mergence → wb2api → WorkBuddy）
         target = models[0]
         print(f"\n=== 真实调用（max_tokens=1）：{target} ===")
         st, d = req("POST", base + "/v1/chat/completions", {
@@ -205,7 +205,7 @@ def main():
             print("  finish_reason:", ch.get("finish_reason"))
             content = (ch.get("message") or {}).get("content") or ""
             print("  内容片段:", repr(content[:80]))
-            print("\n[PASS] WorkBuddy 账号已通过 ModelMux 对外提供服务")
+            print("\n[PASS] WorkBuddy 账号已通过 Mergence 对外提供服务")
         else:
             print("  响应:", json.dumps(d, ensure_ascii=False)[:600])
             print("\n[FAIL] 真实调用未成功")
@@ -219,9 +219,9 @@ def main():
         req("POST", base + "/api/quit", {})
         try:
             mm.wait(timeout=25)
-            print("ModelMux 已退出")
+            print("Mergence 已退出")
         except subprocess.TimeoutExpired:
-            print("ModelMux 未在 25s 内退出")
+            print("Mergence 未在 25s 内退出")
             return 1
     finally:
         if mm.poll() is None:

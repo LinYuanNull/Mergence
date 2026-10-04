@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/logfmt"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/logfmt"
 )
 
 // ErrKind 错误分类，pool 据此决定冷却时长。

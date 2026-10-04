@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"modelmux/internal/provider/zcode/reqlog"
+	"mergence/internal/provider/zcode/reqlog"
 )
 
 // 空缓冲必须编码成 `[]` 而不是 `null` —— 面板对 `null` 直接遍历会抛。

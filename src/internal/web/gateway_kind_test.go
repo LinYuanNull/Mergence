@@ -3,7 +3,7 @@ package web
 import (
 	"testing"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // TestGatewayKindTaken 平台唯一性判重。

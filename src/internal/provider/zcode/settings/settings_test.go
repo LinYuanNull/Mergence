@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/settings"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/settings"
 )
 
 // memMeta 是 MetaStore 的内存实现，让单测不碰文件。

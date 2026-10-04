@@ -3,8 +3,8 @@ package claim
 import (
 	"fmt"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
 )
 
 // Accounts 是领取所需的最小账号池视图。
@@ -104,7 +104,7 @@ func (s *Service) accounts() []models.Account {
 // 样本 `14-claim-empty.POST.json` 的请求体是 `{}` 而池是空的，两种情况都产出
 // 空 outcomes，分不出「空 = 全部」还是「空 = 一条都不领」；判据取自上游
 // Python 侧把 `account_ids` 当可选过滤器的语义（`set(body.get("account_ids") or [])`，
-// 旁证见协同仓库 ModelMux 的 `test/fake_zcode.py` 对同一契约的仿真）。
+// 旁证见协同仓库 Mergence 的 `test/fake_zcode.py` 对同一契约的仿真）。
 // 已登记进 PROVENANCE 的推断清单，待真实账号补采时一并校准。
 //
 // 结果**按池内顺序**（不是请求里 id 的顺序）：候选的遍历顺序不该被一次请求打乱。

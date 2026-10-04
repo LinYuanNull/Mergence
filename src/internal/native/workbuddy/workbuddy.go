@@ -1,19 +1,19 @@
-// Package workbuddy 把 workbuddy2api 装配成一个 ModelMux 进程内原生服务。
+// Package workbuddy 把 workbuddy2api 装配成一个 Mergence 进程内原生服务。
 //
 // ── 这个包为什么存在 ────────────────────────────────────────
 //
 // 上游（`linguo2625469/workbuddy2api-panel`，MIT）的装配逻辑写在它自己的
 // `cmd/server/main.go` 里，而那是 `package main`——**不可 import**。所以要让
-// 上游的 http.Handler 跑在 ModelMux 进程内，必须在 ModelMux 侧把同一张对象图
+// 上游的 http.Handler 跑在 Mergence 进程内，必须在 Mergence 侧把同一张对象图
 // 重新装配一遍：pool → upstream.Client → scheduler → usage / reqlog → panel →
 // server.Handler。
 //
 // 本包就是那张对象图，且**刻意不复刻上游的 cmd/**：
 //
-//   - 不做 CLI flag / 配置文件自动生成 / 优雅停机信号（这些由编排器与 ModelMux
+//   - 不做 CLI flag / 配置文件自动生成 / 优雅停机信号（这些由编排器与 Mergence
 //     自己的退出时序负责）；
 //   - 配置不走环境变量（`WB2A_*` 是「独立部署」场景的约定；进程内实例的配置
-//     由 ModelMux 渠道条目给出，落盘在实例自己的数据目录里）。
+//     由 Mergence 渠道条目给出，落盘在实例自己的数据目录里）。
 //
 // 落位的那份上游源码（`internal/provider/workbuddy/`）保持逐字不动，
 // 好处是能直接 `git merge` 上游的 bug 修复——这也是当初选「fork + 照搬」
@@ -21,7 +21,7 @@
 //
 // ── 数据落点 ──────────────────────────────────────────────
 //
-// 全部落在编排器给出的实例数据目录下，与其它实例、与 ModelMux 自身数据互不干扰：
+// 全部落在编排器给出的实例数据目录下，与其它实例、与 Mergence 自身数据互不干扰：
 //
 //	<data>/config.json        本实例的配置（含面板配置页要读写的字段）
 //	<data>/state.json         账号池状态（积分、冷却、熔断、粘性）
@@ -46,21 +46,21 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/native"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/native"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/livecfg"
-	"modelmux/internal/provider/workbuddy/panel"
-	"modelmux/internal/provider/workbuddy/pool"
-	"modelmux/internal/provider/workbuddy/prompt"
-	"modelmux/internal/provider/workbuddy/redisstore"
-	"modelmux/internal/provider/workbuddy/reqlog"
-	"modelmux/internal/provider/workbuddy/scheduler"
-	"modelmux/internal/provider/workbuddy/server"
-	"modelmux/internal/provider/workbuddy/upstream"
-	"modelmux/internal/provider/workbuddy/usage"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/livecfg"
+	"mergence/internal/provider/workbuddy/panel"
+	"mergence/internal/provider/workbuddy/pool"
+	"mergence/internal/provider/workbuddy/prompt"
+	"mergence/internal/provider/workbuddy/redisstore"
+	"mergence/internal/provider/workbuddy/reqlog"
+	"mergence/internal/provider/workbuddy/scheduler"
+	"mergence/internal/provider/workbuddy/server"
+	"mergence/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/usage"
 )
 
 // upstreamVersion 落位那份上游源码的版本号。
@@ -71,7 +71,7 @@ const upstreamVersion = "1.11.11-panel (native)"
 
 // PanelAPIPrefix 上游管理 API 的前缀。
 //
-// 这是接缝①②的目标前缀：ModelMux 的代理把 `/api/channels/<name>/upstream/<rest>`
+// 这是接缝①②的目标前缀：Mergence 的代理把 `/api/channels/<name>/upstream/<rest>`
 // 打到 `<root>/panel/api/<rest>`。集中导出是为了让它与渠道预设里的
 // `PanelAPIPrefix` 有同一个可见出处，避免两边各写一份而漂移。
 const PanelAPIPrefix = "/panel/api"
@@ -103,7 +103,7 @@ func Boot(host config.ManagedProvider, dataDir string, lg *logging.Logger) (*nat
 	if err != nil {
 		return nil, err
 	}
-	// 路由 Key 由 ModelMux 侧持有并在转发时注入。原生服务与它共用同一个值，
+	// 路由 Key 由 Mergence 侧持有并在转发时注入。原生服务与它共用同一个值，
 	// 这样「谁也别再抄一份密钥」——值为空即完全不鉴权（只绑回环，可接受）。
 	if host.Route != nil && strings.TrimSpace(host.Route.APIKey) != "" {
 		nc.APIKey = strings.TrimSpace(host.Route.APIKey)
@@ -265,7 +265,7 @@ func Boot(host config.ManagedProvider, dataDir string, lg *logging.Logger) (*nat
 	// 上游用标准 log 包输出运维日志（告警、签到结果、请求流水）。
 	// 面板的「运行日志」视图读的是它自己的环形缓冲，而上游 main 通过
 	// `log.SetOutput(MultiWriter(...))` 把日志镜像进去——不接这一步，
-	// 面板日志视图就是空的。ModelMux 自身不使用标准 log 包（用的是
+	// 面板日志视图就是空的。Mergence 自身不使用标准 log 包（用的是
 	// internal/logging），因此这里接管全局输出不会串味。
 	restoreLog := mirrorLog(lg, host.Name, pn)
 
@@ -299,12 +299,12 @@ func cleanupRuntime(rec *usage.Recorder, rl *reqlog.Recorder, p *pool.Pool, stor
 	_ = store.Close()
 }
 
-// mirrorLog 把标准 log 的输出同时镜像到 ModelMux 的结构化日志与面板环形缓冲，
+// mirrorLog 把标准 log 的输出同时镜像到 Mergence 的结构化日志与面板环形缓冲，
 // 返回恢复原输出的函数。
 //
 // 局限（已知且可接受）：标准 log 是进程级全局状态，同一进程内跑两个原生
 // workbuddy 实例时，两条日志会同时进两个面板的环形缓冲。原生实例在
-// ModelMux 里是单例（一个渠道），且日志本身按 provider 名打了标签，
+// Mergence 里是单例（一个渠道），且日志本身按 provider 名打了标签，
 // 所以只是观感问题，不影响功能。
 func mirrorLog(lg *logging.Logger, name string, pn *panel.Panel) func() {
 	prev := log.Writer()
@@ -344,7 +344,7 @@ func warmModelRates(ctx context.Context, up *upstream.Client, p *pool.Pool) {
 //
 // 为什么逐字对齐上游的键名：面板的「配置」视图是 schema 驱动的，读的就是这份
 // 对象；键名一旦偏离，面板上就会少字段或多出无意义的空项。同时它也是
-// ModelMux 侧唯一能改上游行为的地方（排程时点、池参数、脱敏开关）。
+// Mergence 侧唯一能改上游行为的地方（排程时点、池参数、脱敏开关）。
 type fileConfig struct {
 	Listen    string `json:"listen"`
 	APIKey    string `json:"api_key"`

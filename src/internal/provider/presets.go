@@ -8,7 +8,7 @@ package provider
 import (
 	"strings"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // Preset 一个渠道模板。
@@ -108,24 +108,6 @@ func PresetByID(id string) (Preset, bool) {
 	return Preset{}, false
 }
 
-// ApplyPreset 用模板填充一个渠道（仅填空字段，不覆盖已填内容）。
-func ApplyPreset(p Preset, name string) config.EmbeddedProvider {
-	ch := config.EmbeddedProvider{
-		Name:        name,
-		Enabled:     true,
-		Preset:      p.ID,
-		Protocol:    p.Protocol,
-		BaseURL:     p.BaseURL,
-		ModelPrefix: p.ModelPrefix,
-		ModelSource: "auto",
-		Weight:      1,
-	}
-	if ch.DisplayName == "" {
-		ch.DisplayName = p.Label
-	}
-	return ch
-}
-
 // ManagedPreset 托管型 provider 的模板。
 //
 // 与内嵌型预设的区别：这里预填的是「怎么把子进程拉起来」，而路由字段
@@ -194,14 +176,14 @@ const WorkBuddyCreditValue = 0.05
 var ManagedPresets = []ManagedPreset{
 	{
 		ID: "workbuddy", Label: "WorkBuddy 网关（内置原生）", Vendor: "WorkBuddy",
-		// 内置原生：跑在 ModelMux 进程内，不再需要 wb2api.exe。
+		// 内置原生：跑在 Mergence 进程内，不再需要 wb2api.exe。
 		Mode:       config.ModeNative,
 		Kind:       "workbuddy",
 		HealthPath: "/healthz", PanelPath: "/panel/", ModelPrefix: "wb",
 		CreditValue:    WorkBuddyCreditValue,
 		RouteKeyHint:   "可留空：内置实现默认不校验本地 Key；填了就会在转发时装进 Authorization",
 		LegacyCommands: []string{"wb2api", "workbuddy2api"},
-		Note: "跑在 ModelMux 进程内，不再需要单独准备 wb2api.exe。" +
+		Note: "跑在 Mergence 进程内，不再需要单独准备 wb2api.exe。" +
 			"把「数据目录」指到你原来 wb2api 的目录（含 auths 与 config.json）即可沿用已登录的账号；" +
 			"留空则用独立的新目录，需要在「控制台」里重新登录。" +
 			"注意它与子进程形态的 workbuddy 渠道是**同一个平台**，不能同时启用，迁移时先删掉旧渠道。",
@@ -216,7 +198,7 @@ var ManagedPresets = []ManagedPreset{
 	},
 	{
 		ID: "zcode", Label: "ZCode 账号网关（内置原生）", Vendor: "ZCode",
-		// 内置原生：跑在 ModelMux 进程内，不再需要独立部署 zcode2api（Python）。
+		// 内置原生：跑在 Mergence 进程内，不再需要独立部署 zcode2api（Python）。
 		//
 		// 与 workbuddy / trae 的**关键区别**：那两个是「MIT 上游 + 逐字照搬」，
 		// zcode 是 Track 2 **独立重写**（上游 dengyie/zcode2api 是 AGPL-3.0，
@@ -232,7 +214,7 @@ var ManagedPresets = []ManagedPreset{
 		// 老模板的 command 是 `python`（解释器名）—— 不能当锚点（任何用 python
 		// 启动的渠道都会被误判）。改用独有参数串 `cli.py serve` 作锚点。
 		LegacyCommands: []string{"cli.py serve"},
-		Note: "跑在 ModelMux 进程内，不再需要单独准备 zcode2api（Python 项目）。" +
+		Note: "跑在 Mergence 进程内，不再需要单独准备 zcode2api（Python 项目）。" +
 			"把「数据目录」指到你原来 zcode2api 的 data/（含 accounts.db）即可沿用已登录的账号；" +
 			"留空则用独立的新目录，需要在「控制台」里重新登录。" +
 			"**密码只剩一处**：渠道的「路由密钥」就是后台密码（留空用默认 `zcode`），" +
@@ -241,7 +223,7 @@ var ManagedPresets = []ManagedPreset{
 	},
 	{
 		ID: "trae", Label: "Trae 网关（内置原生）", Vendor: "Trae",
-		// 内置原生：跑在 ModelMux 进程内（上游 connectedGraph/trae2api-web，MIT 照搬）。
+		// 内置原生：跑在 Mergence 进程内（上游 connectedGraph/trae2api-web，MIT 照搬）。
 		// 它自带账号池调度 + 冷却状态机 + 每日签到 + 登录闭环。
 		Mode:       config.ModeNative,
 		Kind:       "trae",
@@ -254,7 +236,7 @@ var ManagedPresets = []ManagedPreset{
 		// 拿它当锚点会把任何用 node 启动的渠道都误判成 trae。workbuddy 能用
 		// `wb2api`/`workbuddy2api` 作锚点是因为那是它独有的可执行文件名，trae 没有
 		// 对应的独有名字，所以宁可让老渠道回显为空，也不引入误判。
-		Note: "跑在 ModelMux 进程内，不再需要单独准备 Node 网关。" +
+		Note: "跑在 Mergence 进程内，不再需要单独准备 Node 网关。" +
 			"账号池、每日签到与登录闭环都由内置实现承担：" +
 			"在「控制台」里用设备码/回调链接登录即可添加账号，" +
 			"「限时套餐自动领取」会定时触发它内部的签到。" +

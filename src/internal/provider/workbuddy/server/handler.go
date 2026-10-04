@@ -13,16 +13,16 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/httpauth"
-	"modelmux/internal/provider/workbuddy/livecfg"
-	"modelmux/internal/provider/workbuddy/logfmt"
-	"modelmux/internal/provider/workbuddy/pool"
-	"modelmux/internal/provider/workbuddy/prompt"
-	"modelmux/internal/provider/workbuddy/reqlog"
-	"modelmux/internal/provider/workbuddy/session"
-	"modelmux/internal/provider/workbuddy/upstream"
-	"modelmux/internal/provider/workbuddy/usage"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/httpauth"
+	"mergence/internal/provider/workbuddy/livecfg"
+	"mergence/internal/provider/workbuddy/logfmt"
+	"mergence/internal/provider/workbuddy/pool"
+	"mergence/internal/provider/workbuddy/prompt"
+	"mergence/internal/provider/workbuddy/reqlog"
+	"mergence/internal/provider/workbuddy/session"
+	"mergence/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/usage"
 )
 
 // Config handler 依赖。

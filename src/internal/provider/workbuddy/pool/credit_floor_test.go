@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // TestCreditFloorBlocksPaidBelowFloor 触底号被拦在 tier 2 之外：

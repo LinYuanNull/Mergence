@@ -27,11 +27,11 @@ import (
 	"strconv"
 	"time"
 
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/marks"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/store"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/marks"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/store"
 )
 
 // 重试与冷却参数（behavior.md §3.1 逐字）。
@@ -50,19 +50,6 @@ const (
 
 // recentKeep 是 recent_results 的容量（探针 F：连打 60 次后仍只保留末尾 20 条）。
 const recentKeep = 20
-
-// 客户端错分类：这些 4xx 直接透传、不切账号（探针 p-404/p-408/p-422 实测
-// 都只出站 1 次）。
-//
-// ⚠️ 这个集合是**白名单**：不在集合里的 4xx（如 405、409、418）按 behavior.md
-// 第三节末尾登记的规则走"客户端错透传"兜底。见 classify。
-func isClientError(code int) bool {
-	switch code {
-	case 400, 404, 408, 422:
-		return true
-	}
-	return false
-}
 
 // Outcome 是一次账号尝试的结论。
 type Outcome int

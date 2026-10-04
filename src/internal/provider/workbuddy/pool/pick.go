@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/logfmt"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/logfmt"
 )
 
 // Pick 单一选号入口（无请求级轮换、无 realm 过滤，模型感知缺省账号级）。

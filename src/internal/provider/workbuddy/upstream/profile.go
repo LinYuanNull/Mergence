@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // FetchAccountProfile 拉取账号资料并返回最新昵称。uid 与凭证不一致时报错

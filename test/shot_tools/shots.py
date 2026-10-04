@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """用真实浏览器渲染面板并截图，验证前端确实能工作。
 
-不用 WebView2 而是 Edge headless：面板是 ModelMux 自己提供的页面，
+不用 WebView2 而是 Edge headless：面板是 Mergence 自己提供的页面，
 只要浏览器能访问到那个端口，同源请求就能通过 —— 与窗口里看到的完全一致。
 
 --virtual-time-budget 是关键：SPA 首屏要等几个 fetch 回来才渲染，
@@ -20,10 +20,10 @@ import time
 _TEST = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(_TEST)
 HOME = os.path.join(ROOT, "test", "shots_home")
-EXE = os.path.join(ROOT, "ModelMux.exe")
+EXE = os.path.join(ROOT, "Mergence.exe")
 FAKE = os.path.join(ROOT, "test", "fake_upstream.py")
-# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MODELMUX_PY 覆盖）。
-PY = os.environ.get("MODELMUX_PY", sys.executable)
+# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MERGENCE_PY 覆盖）。
+PY = os.environ.get("MERGENCE_PY", sys.executable)
 FAKE_PORT = 18092
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -68,7 +68,7 @@ def main():
     if os.path.isdir(HOME):
         shutil.rmtree(HOME, ignore_errors=True)  # 仅限 test 下的测试目录
     os.makedirs(os.path.join(HOME, "config"), exist_ok=True)
-    with open(os.path.join(HOME, "config", "modelmux.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(HOME, "config", "mergence.json"), "w", encoding="utf-8") as f:
         json.dump(CONFIG, f, ensure_ascii=False, indent=2)
 
     fake = subprocess.Popen([PY, FAKE, str(FAKE_PORT)],
@@ -77,12 +77,12 @@ def main():
     try:
         time.sleep(1.0)
         env = dict(os.environ)
-        env["MODELMUX_HOME"] = HOME
-        env["MODELMUX_HEADLESS"] = "1"
+        env["MERGENCE_HOME"] = HOME
+        env["MERGENCE_HEADLESS"] = "1"
         mm = subprocess.Popen([EXE], env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        log = os.path.join(HOME, "data", "logs", "modelmux.log")
+        log = os.path.join(HOME, "data", "logs", "mergence.log")
         port, deadline = None, time.time() + 25
         while time.time() < deadline and not port:
             if os.path.isfile(log):

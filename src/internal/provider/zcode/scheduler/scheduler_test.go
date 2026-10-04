@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/marks"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/store"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/marks"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/store"
 )
 
 // 本文件的判据全部来自 docs/contract/outbound/behavior.md §3.1 的分类表

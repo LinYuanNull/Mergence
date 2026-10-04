@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/session"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/session"
 )
 
 const (

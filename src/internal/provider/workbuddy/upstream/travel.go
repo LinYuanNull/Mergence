@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // growth 域路径（实测）。

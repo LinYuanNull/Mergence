@@ -1,7 +1,7 @@
 /* overview.js 概览面板：只放「本机转发」的用量。
  *
  * 口径：每次 /v1 转发都记了 token 与缓存，费用 = token × 价格表。
- * 这是**估算**——ModelMux 只是网关，不知道上游实际扣了多少
+ * 这是**估算**——Mergence 只是网关，不知道上游实际扣了多少
  * （中转站倍率、协议价、赠送额度都会让两者不等）。
  * 拿不到价格时显示「价格未知」而不是 $0.00。
  *
@@ -249,8 +249,8 @@ function localBlock(local, accountSpend, fxCny) {
   const tag = hasEmbedded && hasManaged ? '本机转发'
     : (hasManaged ? '本机转发（积分型平台）' : 'API 型平台');
   const sub = hasEmbedded
-    ? '经 ModelMux 转发的用量 · 费用按 token 估算'
-    : '经 ModelMux 转发的用量 · 费用按 token 估算（这些是积分型平台的对外入口）';
+    ? '经 Mergence 转发的用量 · 费用按 token 估算'
+    : '经 Mergence 转发的用量 · 费用按 token 估算（这些是积分型平台的对外入口）';
 
   return foldCard('mt-local', '', tag, sub, `
     <div class="cards">${cards.map(mtCard).join('')}</div>

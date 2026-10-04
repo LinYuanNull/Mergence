@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""假上游：模拟三种协议形态，供 ModelMux 端到端验证。
+"""假上游：模拟三种协议形态，供 Mergence 端到端验证。
 
 - /chat/v1/chat/completions : OpenAI Chat，支持非流式与 SSE 流式
 - /anth/v1/models           : Anthropic 风格模型列表
@@ -85,9 +85,9 @@ class H(BaseHTTPRequestHandler):
             "created": int(time.time()), "model": model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": f"echo:{model}"},
                          "finish_reason": "stop"}],
-            # 故意带一个非标准字段，验证 ModelMux 直通时不会把它丢掉
+            # 故意带一个非标准字段，验证 Mergence 直通时不会把它丢掉
             "x_vendor_extra": {"nested": [1, 2, 3]},
-            # 带缓存明细：验证 ModelMux 能算出缓存命中率与分档费用
+            # 带缓存明细：验证 Mergence 能算出缓存命中率与分档费用
             # （prompt_tokens 含 cached，OpenAI 口径）
             "usage": {"prompt_tokens": 100, "completion_tokens": 7, "total_tokens": 107,
                       "prompt_tokens_details": {"cached_tokens": 40}},

@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"time"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // handleSettingsPort POST /api/settings/port {"port": 8642}（0 = 恢复动态分配）。

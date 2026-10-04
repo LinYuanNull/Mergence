@@ -3,7 +3,7 @@ package provider
 import (
 	"testing"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // TestManagedPresetByKind 原生型渠道的模板回显靠 kind 直接查表。

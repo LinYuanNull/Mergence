@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"modelmux/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/constants"
 )
 
 // EpochNow 返回当前时间的 epoch 秒（带小数），与靶机的 `time.time()` 同形。

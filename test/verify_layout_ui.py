@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""布局改造验证：侧栏折叠 / 概览拆分 / 渠道嵌套编辑。
+"""布局改造验证：侧栏折叠 / 概览拆分 / 渠道嵌套编辑 / 添加平台视图。
 
 这几项都是「交互态」——纯截图看不出「点开之后还在不在原位」，
 必须真的点一遍再断言 DOM。
+
+数据依赖：3 / 3b 与 3c 末尾那几项需要实例里**已有渠道**（3b 还要求有个
+名为 zcode 的托管渠道）；渠道池为空时这些项会打印 [跳过] 而不是算失败，
+总数会相应少几项 —— 这是数据条件，不是回归。
 """
 import base64
 import json
@@ -25,8 +29,34 @@ results = []
 
 
 def check(name, ok, detail=""):
+    # js() 在表达式抛异常时返回 {"__err": ...}。dict 恒为真值 —— 不显式挡掉的话，
+    # 一个「元素不存在 → TypeError」的断言会静默 PASS，跑出来一片绿其实什么都没测到。
+    if isinstance(ok, dict) and "__err" in ok:
+        detail = detail or ok["__err"]
+        ok = False
     results.append((name, bool(ok), detail))
     print(("[PASS] " if ok else "[FAIL] ") + name + ("" if ok else "  ← " + str(detail)[:220]))
+
+
+def _invis(mid):
+    """元素在页面上是否「真的不可见」：display 为 none 且渲染高度为 0。
+
+    只断言 hidden 属性是不够的 —— 曾经的缺陷正是「属性为 true，但 .inline 的
+    display:block（类选择器）压过了浏览器对 [hidden] 的 display:none（属性
+    选择器）」，属性断言照样通过，面板却明晃晃显示在渠道列表正下方。
+    """
+    return ("(function(){var m=document.getElementById(%r);if(!m)return false;"
+            "return getComputedStyle(m).display==='none'"
+            "&&m.getBoundingClientRect().height===0})()" % mid)
+
+
+def _probe(mid):
+    """诊断串：hidden 属性 / 计算样式 / 渲染高度 / .inline 类一次取回，
+    失败时能直接看出是哪一层没生效。"""
+    return ("(function(){var m=document.getElementById(%r);if(!m)return 'missing';"
+            "var cs=getComputedStyle(m),r=m.getBoundingClientRect();"
+            "return 'hidden='+m.hidden+' display='+cs.display+' h='+r.height"
+            "+' inline='+m.classList.contains('inline')})()" % mid)
 
 
 def main():
@@ -160,11 +190,43 @@ def main():
                   js("(function(){var a=document.querySelector('#acctList').closest('.card').getBoundingClientRect();"
                      "var b=document.getElementById('acctEditor').getBoundingClientRect();return b.left>a.right-4})()"), "")
             shot(ws, "lay_channel_edit")
+            # 判据必须是「实际不可见」，不能只看 hidden 属性：
+            # .inline 的 display:block 曾经压过 [hidden] 的 display:none，
+            # 于是 hidden=true 之后面板仍继续渲染在渠道列表正下方。
             js("document.getElementById('btnCloseCh').click()")
             time.sleep(0.8)
-            check("关闭后回到纯列表（编辑态撤销）",
-                  js("!document.getElementById('acctSplit').classList.contains('editing')")
-                  and js("document.getElementById('chModal').hidden"), "")
+            check("点关闭后编辑态撤销（两栏退回单列）",
+                  js("!document.getElementById('acctSplit').classList.contains('editing')"), "")
+            check("点关闭后编辑面板实际不可见（display:none 且高度 0）",
+                  js(_invis("chModal")), js(_probe("chModal")))
+            check("点关闭后面板不再留在编辑槽里（槽位为空、不占位）",
+                  js("document.querySelector('#acctEditor').children.length") == 0
+                  and js("document.querySelector('#acctEditor').getBoundingClientRect().height") == 0,
+                  js(_probe("chModal")))
+            check("点关闭后 chModal 回到 body 原址（不再占据视图内位置）",
+                  js("document.getElementById('chModal').parentElement === document.body"),
+                  js("document.getElementById('chModal').parentElement"
+                     "&&document.getElementById('chModal').parentElement.id"))
+
+            # ── 关闭的第二条路径：ESC ──────────────────────────
+            # 它以前只设 hidden、不走 unmount：既不摘 .inline 也不撤销 .editing，
+            # 是同一个缺陷的另一半。必须单独验。
+            js("document.querySelector('#acctList [data-act=edit]').click()")
+            time.sleep(1.2)
+            check("（ESC 前置）再次点开后面板确实是内联可见面板",
+                  js("document.getElementById('chModal').classList.contains('inline')")
+                  and js("getComputedStyle(document.getElementById('chModal')).display") == "block",
+                  js(_probe("chModal")))
+            js("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))")
+            time.sleep(0.8)
+            check("按 ESC 关闭后编辑面板实际不可见",
+                  js(_invis("chModal")), js(_probe("chModal")))
+            check("按 ESC 关闭后分栏也回单列（不留 editing 残留）",
+                  js("document.querySelectorAll('.chsplit.editing').length") == 0,
+                  js("document.querySelectorAll('.chsplit.editing').length"))
+            check("按 ESC 关闭后编辑槽仍为空",
+                  js("document.querySelector('#acctEditor').children.length") == 0,
+                  js("document.querySelector('#acctEditor').children.length"))
             # 切到别的视图时不应把表单遗留过去
             js("setView('acct')")
             time.sleep(0.6)
@@ -173,8 +235,135 @@ def main():
             js("setView('overview')")
             time.sleep(1.2)
             check("切走视图时编辑区自动收起（表单不跟着跑）",
-                  js("document.getElementById('chModal').hidden")
-                  and js("document.querySelectorAll('.chsplit.editing').length") == 0, "")
+                  js(_invis("chModal"))
+                  and js("!document.getElementById('chModal').closest('.view')"),
+                  js(_probe("chModal")))
+
+        # ── 3c. 「添加平台」＝侧栏里的独立视图 ──────────────
+        # 改造前：两个渠道视图各挂一个「添加」按钮（添加 API 平台 / 添加积分型
+        # 平台）。按钮已经替你选好了类型，进表单第一项却又是「渠道类型」二选一
+        # —— 同一件事被问两遍。现在类型只在这个视图里选一次，渠道视图退化成
+        # 只读列表。本节不依赖已有渠道数据，渠道池为空时照样能验。
+        addnav = "#nav .nav-i[data-view=add]"
+        check("侧栏「渠道」分组里有「添加平台」独立入口",
+              js("!!document.querySelector('%s')" % addnav)
+              and js("document.querySelector('%s span').textContent.trim()" % addnav) == "添加平台",
+              js("document.querySelector('%s span')"
+                 "&&document.querySelector('%s span').textContent" % (addnav, addnav)))
+        check("两个渠道视图里的「添加」按钮已移除（入口不再重复）",
+              not js("!!document.getElementById('btnAddApi')")
+              and not js("!!document.getElementById('btnAddAcct')"), "")
+        js("document.querySelector('%s').click()" % addnav)
+        time.sleep(1.6)
+        check("点侧栏入口切到「添加平台」且导航高亮",
+              js("Store.get().view") == "add"
+              and js("document.querySelector('%s').classList.contains('on')" % addnav),
+              js("Store.get().view"))
+        check("视图标题与副标题都是新建语境",
+              js("document.getElementById('ttl').textContent.trim()") == "添加平台"
+              and "新建" in (js("document.getElementById('subMeta').textContent") or ""),
+              js("document.getElementById('ttl').textContent + ' / ' "
+                 "+ document.getElementById('subMeta').textContent"))
+        check("进视图即挂出表单（不需要先点任何按钮）",
+              js("document.getElementById('chModal').parentElement.id") == "addEditor"
+              and not js(_invis("chModal")), js(_probe("chModal")))
+        check("表单是内联普通文档流（不是盖住整屏的弹层）",
+              js("document.getElementById('addEditor')"
+                 ".contains(document.getElementById('chModal'))")
+              and js("getComputedStyle(document.getElementById('chModal')).position") == "static",
+              js("getComputedStyle(document.getElementById('chModal')).position"))
+        check("表单标题跟着视图叫「添加平台」",
+              js("document.getElementById('chFormTitle').textContent.trim()") == "添加平台",
+              js("document.getElementById('chFormTitle').textContent"))
+        # 独立视图里不该有「关闭」：关掉只会把当前这个空视图留在原地，
+        # 不像弹层那样有关掉的对象。
+        check("添加平台视图里表单不显示「关闭」按钮",
+              js("document.getElementById('btnCloseCh').hidden"), js(_probe("chModal")))
+        check("「渠道类型」可选（不再是进表单前的重复提问）",
+              js("document.querySelectorAll('#chKind .seg-b').length") == 2
+              and not js("document.getElementById('chKind').classList.contains('locked')"), "")
+        js("document.querySelector('#chKind .seg-b[data-kind=managed]').click()")
+        time.sleep(0.9)
+        check("切到积分型：托管专属字段显示、API 专属字段隐藏",
+              js("getComputedStyle(document.querySelector('#chModal .konly[data-kind=managed]')).display") != "none"
+              and js("getComputedStyle(document.querySelector('#chModal .konly[data-kind=embedded]')).display") == "none",
+              js("document.getElementById('kindHint').textContent"))
+        check("类型提示文案随之更新",
+              "积分型" in (js("document.getElementById('kindHint').textContent") or ""),
+              js("document.getElementById('kindHint').textContent"))
+        # ESC / 点空白在这两种视图里含义不同：分栏编辑态是「关掉弹层」，
+        # 独立视图里那等于把当前页面弄空，必须不生效。
+        js("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))")
+        time.sleep(0.7)
+        check("按 ESC 不会把「添加平台」的整页表单收掉",
+              js("document.getElementById('chModal').parentElement.id") == "addEditor"
+              and not js(_invis("chModal")), js(_probe("chModal")))
+        js("document.getElementById('chModal').click()")
+        time.sleep(0.7)
+        check("点表单外空白也不会把整页表单收掉",
+              js("document.getElementById('chModal').parentElement.id") == "addEditor"
+              and not js(_invis("chModal")), js(_probe("chModal")))
+        # 同分组内互切：表单是单例、跟着分组走，填了一半的草稿不该被清空
+        js("document.getElementById('fName').value = '草稿渠道'")
+        js("setView('api')")
+        time.sleep(1.3)
+        check("切到渠道视图后表单不在别处露头（编辑槽仍是空的、左列不被挤窄）",
+              js("document.querySelector('#apiEditor').children.length") == 0
+              and not js("document.querySelector('#apiSplit').classList.contains('editing')"),
+              js("document.querySelector('#apiSplit').className"))
+        js("document.querySelector('%s').click()" % addnav)
+        time.sleep(1.4)
+        check("切回来保留填了一半的草稿（不重置成空表单）",
+              js("document.getElementById('fName').value") == "草稿渠道",
+              js("document.getElementById('fName').value"))
+        shot(ws, "lay_add_view")
+        # 离开「渠道」分组才释放表单
+        js("setView('overview')")
+        time.sleep(1.3)
+        check("离开渠道分组后表单被收回（不留痕在其它视图里）",
+              js(_invis("chModal"))
+              and js("!document.getElementById('chModal').closest('.view')"),
+              js(_probe("chModal")) + " parent=" + str(
+                  js("document.getElementById('chModal').parentElement.id")))
+        js("document.querySelector('%s').click()" % addnav)
+        time.sleep(1.4)
+        check("重新进入时表单自动回来（进这个视图就是要新建）",
+              js("document.getElementById('chModal').parentElement.id") == "addEditor"
+              and not js(_invis("chModal")), js(_probe("chModal")))
+        # 判据是「草稿没了、回到新建态」，**不是「字段为空」**：新建内嵌渠道会走
+        # applyPreset，把 #fName 预填成第一个预设的标签（「自定义 OpenAI 兼容
+        # 端点（空白）」）。断空串在这里恒假 —— 那是判据错，不是回归。
+        check("重新进入后是一张新表单（上一份草稿随退出分组释放了）",
+              js("document.getElementById('fName').value") != "草稿渠道"
+              and js("document.getElementById('chFormTitle').textContent.trim()") == "添加平台",
+              js("document.getElementById('fName').value"))
+        # 从编辑态切进「添加平台」：要换成干净的新表单，且原视图不能留下
+        # 「编辑中」的两栏态（表单被搬走了、左列却还挤窄着，右边一片空）。
+        if js("!!document.querySelector('#apiList [data-act=edit]')"):
+            js("setView('api')")
+            time.sleep(1.4)
+            js("document.querySelector('#apiList [data-act=edit]').click()")
+            time.sleep(1.5)
+            edit_title = js("document.getElementById('chFormTitle').textContent.trim()")
+            edit_name = js("document.getElementById('fName').value") or ""
+            js("document.querySelector('%s').click()" % addnav)
+            time.sleep(1.5)
+            check("（前置）编辑态表单标题带渠道名", "编辑渠道" in (edit_title or ""), edit_title)
+            check("（前置）编辑态表单填的是被编辑渠道的名字",
+                  edit_name != "", edit_name)
+            # 同前：新建态会被预设预填 #fName，所以判据是「名字换了」而不是「空了」。
+            check("从编辑态切进「添加平台」得到的是新表单，不是接着编辑",
+                  js("document.getElementById('chFormTitle').textContent.trim()") == "添加平台"
+                  and js("document.getElementById('fName').value") != edit_name,
+                  js("document.getElementById('chFormTitle').textContent")
+                  + " / name=" + str(js("document.getElementById('fName').value")))
+            check("原先的编辑视图不残留「编辑中」（左列不该被挤窄）",
+                  js("document.querySelectorAll('.chsplit.editing').length") == 0,
+                  js("document.querySelectorAll('.chsplit.editing').length"))
+        else:
+            print("  [跳过] 从编辑态切进「添加平台」的 3 项：本实例没有可编辑的渠道")
+        js("setView('overview')")
+        time.sleep(1.0)
         # ── 3b. 模板下拉必须反映渠道的真实模板 ───────────────
         # 曾经的缺陷：托管渠道的 preset 从来没被写进配置（toManaged 漏了它），
         # raw 接口回空 → <select> 停在第一个选项 → **zcode 渠道显示成
@@ -191,8 +380,12 @@ def main():
             val = js("document.getElementById('fPreset').value")
             label = js("document.getElementById('fPreset').selectedOptions[0].textContent") or ""
             check("zcode 渠道的模板下拉选中 zcode", val == "zcode", "value=%s" % val)
+            # 标签文案随「zcode 改为内置原生」更新过（旧文案带 zcode2api 字样，
+            # 见 provider/presets.go 的 Label: "ZCode 账号网关（内置原生）"）。
+            # 断言意图不变：选中的必须是 ZCode 网关，而不是下拉里的第一项
+            # （第一项是 WorkBuddy —— 下一条断言专门挡住那个回归）。
             check("下拉显示的是 ZCode 网关标签（不是下拉里的第一项）",
-                  "zcode2api" in label, label)
+                  "ZCode" in label, label)
             check("下拉没有误显示 WorkBuddy 模板", "WorkBuddy" not in label, label)
             check("托管型下拉带「未记录模板」占位项（判不出时不显示错的）",
                   js("!!document.querySelector('#fPreset option[value=\"\"]')"),

@@ -1,6 +1,6 @@
 package models
 
-import "modelmux/internal/provider/zcode/constants"
+import "mergence/internal/provider/zcode/constants"
 
 // Stats 是 `GET /admin/api/accounts` 的 `stats` 字段。
 //

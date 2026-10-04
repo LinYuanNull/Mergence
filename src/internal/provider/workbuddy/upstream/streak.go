@@ -12,7 +12,7 @@ import (
 	"encoding/json"
 
 	"fmt"
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 	"net/http"
 )
 

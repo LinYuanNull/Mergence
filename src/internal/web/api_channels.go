@@ -1,8 +1,8 @@
 // api_channels.go 渠道增删改查 + 保存前测试连接。
 //
 // 「渠道」在这里统一指两类可路由上游：
-//   - 内嵌型（embedded）：ModelMux 直接向一个 OpenAI 兼容端点发请求
-//   - 托管型（managed）：上游是 ModelMux 拉起的独立子进程
+//   - 内嵌型（embedded）：Mergence 直接向一个 OpenAI 兼容端点发请求
+//   - 托管型（managed）：上游是 Mergence 拉起的独立子进程
 //
 // 两类共用一套路由与协议适配（见 provider.Upstream），所以管理接口也共用一套：
 // 只有「怎么把上游拉起来」这一段不同，其余字段与行为完全一致。
@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/orchestrator"
-	"modelmux/internal/provider"
+	"mergence/internal/config"
+	"mergence/internal/orchestrator"
+	"mergence/internal/provider"
 )
 
 // accountCountTimeout 问上游账号数的超时。给得比面板代理短：
@@ -565,7 +565,7 @@ func (s *Server) handleChannelAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "channels": s.channelStatuses()})
 }
 
-// handleChannelAdminKey 改托管网关的后台密码，并把同一个值同步到 ModelMux 侧。
+// handleChannelAdminKey 改托管网关的后台密码，并把同一个值同步到 Mergence 侧。
 //
 // 为什么必须由本进程代写，而不让前端直接打面板代理的 PUT /settings：
 // 这个密码在两侧各存一份，而且两侧都真的在用——
@@ -676,7 +676,7 @@ func (s *Server) handleChannelAdminKey(w http.ResponseWriter, r *http.Request) {
 	// （WithForcedSetting）。若这里不同步 route key，下次重启就又把密码
 	// 压回旧值 —— 那正是「只改一边」故障换了个方向。
 	//
-	// 老式子进程形态不需要这一步：它的密码本就存在网关侧，ModelMux 只负责
+	// 老式子进程形态不需要这一步：它的密码本就存在网关侧，Mergence 只负责
 	// 转发时注入；本机唯一的那份副本（Claim.AdminKey）在下面统一写。
 	if up.Source == provider.SourceNative {
 		if _, _, err := s.saveConfig(func(c *config.Config) {
@@ -707,7 +707,7 @@ func (s *Server) handleChannelAdminKey(w http.ResponseWriter, r *http.Request) {
 	}
 	// 日志只说改了哪条渠道：密码属于凭据，不落日志。
 	s.lg.Info("网关后台密码已修改，两处同步一致", "channel", up.Name)
-	writeJSON(w, map[string]any{"ok": true, "synced": []string{"gateway", "modelmux"}})
+	writeJSON(w, map[string]any{"ok": true, "synced": []string{"gateway", "mergence"}})
 }
 
 // channelStatuses 渠道状态，外加面板要用的补充字段。
@@ -1152,7 +1152,7 @@ func findManaged(c *config.Config, name string) *config.ManagedProvider {
 // fetchAccountCount 问上游「账号池里有几个账号」。
 //
 // 为什么直接问上游而不缓存进配置：账号是子进程持有的运行时数据
-// （用户随时在网关那边增删），ModelMux 侧存一份只会变成过期数据。
+// （用户随时在网关那边增删），Mergence 侧存一份只会变成过期数据。
 //
 // 复用的是面板代理那一套目标地址与凭据（panelAPIPrefixFor / panelAuthKey），
 // 不另造一条通道——两条通道迟早会漂移。

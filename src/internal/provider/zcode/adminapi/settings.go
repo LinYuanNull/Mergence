@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/httpx"
-	"modelmux/internal/provider/zcode/settings"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/httpx"
+	"mergence/internal/provider/zcode/settings"
 )
 
 // ── GET /admin/api/settings ─────────────────────────────────
@@ -32,7 +32,7 @@ func (a *API) handleSettingsGet(w http.ResponseWriter, _ *http.Request) {
 //   - `admin_key` 为空串 → 400 `后台密钥不能为空`（observations.md #9，样本
 //     `18-settings-put-empty-key.PUT.json` 逐字可证）。
 //   - **掩码值原样回提交不得写坏密钥**：值里含 `…`（U+2026）或等于 `••••` 时
-//     跳过该键。依据是 ModelMux 面板的既有行为约定（「上游对含 … 的值显式跳过」），
+//     跳过该键。依据是 Mergence 面板的既有行为约定（「上游对含 … 的值显式跳过」），
 //     见 test/verify_zcode_accounts.py 的「掩码密钥原样提交不会被写坏」一项；
 //     A1 样本未覆盖，属**外部约定**而非本仓库样本。
 func (a *API) handleSettingsPut(w http.ResponseWriter, r *http.Request) {

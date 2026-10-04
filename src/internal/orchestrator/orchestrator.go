@@ -6,14 +6,13 @@
 //
 // 「托管型」指那些不是可 import 的库、只能当服务来用的上游（new-api、
 // zcode2api、workbuddy2api、trae2api-web 等）。它们对外都只是一个
-// OpenAI 兼容的 HTTP 端点 + 一套管理 API，ModelMux 只需要知道「它在哪」。
+// OpenAI 兼容的 HTTP 端点 + 一套管理 API，Mergence 只需要知道「它在哪」。
 package orchestrator
 
 import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,8 +24,8 @@ import (
 	"syscall"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
+	"mergence/internal/config"
+	"mergence/internal/logging"
 )
 
 // State 实例状态。
@@ -240,13 +239,13 @@ func (o *Orchestrator) Restart(ctx context.Context, c config.ManagedProvider) er
 
 // buildEnv 组装子进程环境变量：继承 + 用户自定义 + 端口 + 数据目录。
 //
-// 端口走双通道下发：MODELMUX_PORT 是我们的约定，PortEnvVar 是该 provider 原生的
+// 端口走双通道下发：MERGENCE_PORT 是我们的约定，PortEnvVar 是该 provider 原生的
 // 变量名（如 new-api 用 PORT）——两者都注入，兼容不同 provider 的配置习惯。
 func buildEnv(c config.ManagedProvider, port int, dataDir string) []string {
 	env := os.Environ()
 	env = append(env,
-		"MODELMUX_PORT="+strconv.Itoa(port),
-		"MODELMUX_DATA_DIR="+dataDir,
+		"MERGENCE_PORT="+strconv.Itoa(port),
+		"MERGENCE_DATA_DIR="+dataDir,
 	)
 	if c.PortEnvVar != "" {
 		env = append(env, c.PortEnvVar+"="+strconv.Itoa(port))
@@ -395,17 +394,6 @@ func (o *Orchestrator) List() []Status {
 	return out
 }
 
-// Get 查询单个实例状态。
-func (o *Orchestrator) Get(name string) (Status, bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	inst, ok := o.ins[name]
-	if !ok {
-		return Status{}, false
-	}
-	return o.statusOf(inst), true
-}
-
 func (o *Orchestrator) statusOf(inst *Instance) Status {
 	s := Status{
 		Name:        inst.cfg.Name,
@@ -460,14 +448,4 @@ func errString(err error) string {
 		return "<nil>"
 	}
 	return err.Error()
-}
-
-// EnsureAddr 判断某个 127.0.0.1:port 是否可连通（供面板/插件做「未连接」提示）。
-func EnsureAddr(port int) bool {
-	c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 500*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	_ = c.Close()
-	return true
 }

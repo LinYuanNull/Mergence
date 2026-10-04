@@ -1,4 +1,4 @@
-// metrics.go ModelMux 自身的调用计量。
+// metrics.go Mergence 自身的调用计量。
 //
 // 存在的原因：面板要展示「API 费用 / 调用次数 / 缓存命中率」，而这些数字
 // 上游不会主动交给我们——它只在响应体里回一句 usage。仅靠日志里的
@@ -106,7 +106,7 @@ func (u Usage) Normalize() Normalized {
 // Record 一条调用计量。
 type Record struct {
 	Time time.Time `json:"time"`
-	// Channel 渠道名（ModelMux 内部标识）。
+	// Channel 渠道名（Mergence 内部标识）。
 	Channel string `json:"channel"`
 	// Source 渠道来源：embedded（API 型平台）/ managed（积分型平台）。
 	Source string `json:"source"`

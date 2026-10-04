@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/httpx"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/quota"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/httpx"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/quota"
 )
 
 // ── GET /admin/api/accounts ─────────────────────────────────
@@ -133,7 +133,7 @@ func (a *API) handleAccountsDelete(w http.ResponseWriter, r *http.Request) {
 // 成功体 `{ok:true}`；账号不存在 → 404 `{"detail":"账号不存在"}`。
 //
 // 支持改 `name` 与 `token`。`token` 这一项**不是**从 A1 样本推出来的
-// （样本只发了 `{name}`），而是 ModelMux 面板的编辑弹窗里有「新的 Token」输入框
+// （样本只发了 `{name}`），而是 Mergence 面板的编辑弹窗里有「新的 Token」输入框
 // 所必需；`mode` 随凭据形态重判（三段点分 → jwt，否则 apiKey）。
 // 这两点属**推断**，已登记在 PROVENANCE.md。
 type accountEditRequest struct {

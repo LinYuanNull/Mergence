@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // TestDeviceTokenInjected_WhenSet auth.Auth.DeviceToken 非空时 chat/billing 请求均注入。

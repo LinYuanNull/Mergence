@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // TestGrowthStreakParsesDays 解析 data.streak.days（probe_active.py 同口径）。

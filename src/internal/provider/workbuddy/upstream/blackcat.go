@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // InNightWindow 当前是否处于夜猫子计数窗口（23:00–08:00 本地时区）。

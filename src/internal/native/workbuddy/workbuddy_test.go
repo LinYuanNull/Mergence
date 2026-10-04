@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/native"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/native"
 
-	"modelmux/internal/provider/workbuddy/server"
+	"mergence/internal/provider/workbuddy/server"
 )
 
 // testLogger 用一个真实 logger（写到临时目录、级别 error），
@@ -140,7 +140,7 @@ func TestNativeServiceEndToEnd(t *testing.T) {
 	// ── 2) 管理 API 真的挂上了（接缝①②打的就是 /panel/api/*）
 	//
 	// 没有 Bearer 必须 401 —— 这条同时证明了鉴权中间件生效、
-	// 以及 ModelMux 侧「密钥由服务端注入」的做法是有意义的。
+	// 以及 Mergence 侧「密钥由服务端注入」的做法是有意义的。
 	if st, _, b := get(t, root+PanelAPIPrefix+"/overview", ""); st != http.StatusUnauthorized {
 		t.Fatalf("无凭据访问管理 API 应 401，实际 %d body=%s", st, b)
 	}
@@ -261,7 +261,7 @@ func TestCloseReleasesListener(t *testing.T) {
 // 改的 Key 不生效（面板代理与数据面都拿旧 Key → 全 401），而配置文件里明明写着对的值。
 // 所以两个方向都要钉住：
 //
-//	渠道填了 route.api_key  → 它说了算（ModelMux 是唯一配置源）
+//	渠道填了 route.api_key  → 它说了算（Mergence 是唯一配置源）
 //	渠道没填                → 用实例 config.json 里的（兼容直接复用原 wb2api 目录）
 func TestRouteKeyOverridesFileKey(t *testing.T) {
 	t.Run("渠道填了 Key，覆盖实例配置里的值", func(t *testing.T) {

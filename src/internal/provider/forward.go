@@ -26,7 +26,7 @@ import (
 // 让人摸不着头脑的 400，用户会以为是自己的请求写错了。直接说清「暂不支持」
 // 比让他去猜要好。
 var ErrResponsesUnsupported = errors.New(
-	"上游协议为 OpenAI Responses，ModelMux 的该协议适配尚未完成；" +
+	"上游协议为 OpenAI Responses，Mergence 的该协议适配尚未完成；" +
 		"请在渠道设置里改选「Chat Completions」，或改用支持 Chat Completions 的上游")
 
 // maxUpstreamBody 单次上游响应体的读取上限（非流式）。
@@ -270,11 +270,6 @@ func rewriteModel(body []byte, model string) ([]byte, error) {
 	return json.Marshal(fields)
 }
 
-// extractTotalTokens 尽力从响应里读出 token 总量。读不到返回 0，不影响主流程。
-func extractTotalTokens(body []byte) int {
-	return int(parseUsage(body).TotalTokens)
-}
-
 // parseUsage 从一个 OpenAI 形状的 JSON 里读出 usage。
 //
 // 兼容三种上游命名，因为它们给的是同一件事的不同叫法：
@@ -354,18 +349,6 @@ func parseUsage(body []byte) Usage {
 		}
 	}
 	return out
-}
-
-// ExtractStreamTokens 从一段 SSE 文本里尽力提取 token 总量（流式收尾时调用）。
-func ExtractStreamTokens(sse []byte) int {
-	total := int64(0)
-	_ = eachSSEEvent(strings.NewReader(string(sse)), func(_ string, data []byte) error {
-		if n := parseUsage(data).TotalTokens; n > 0 {
-			total = n
-		}
-		return nil
-	})
-	return int(total)
 }
 
 // StreamUsageScanner 边转发边从 SSE 字节流里捞 usage。

@@ -8,8 +8,8 @@ package quota
 import (
 	"errors"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
 )
 
 // ErrUpstreamUnavailable 表示额度刷新需要上游调用，本阶段未实现。

@@ -1,4 +1,4 @@
-module modelmux
+module mergence
 
 go 1.26.0
 

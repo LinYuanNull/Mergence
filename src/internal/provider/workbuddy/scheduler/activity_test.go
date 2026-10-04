@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/pool"
-	"modelmux/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/pool"
+	"mergence/internal/provider/workbuddy/upstream"
 )
 
 // fastActivity 关闭活跃上报账号间限速，避免测试白等 800ms。

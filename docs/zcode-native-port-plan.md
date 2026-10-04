@@ -1,14 +1,14 @@
 # 网关原生化总计划
 
 > 文件名沿用 `zcode-native-port-plan.md`（历史原因，避免断掉既有引用）。
-> 内容已从「zcode 专项」扩展为 **ModelMux 四个托管型渠道的完整处置计划**。
+> 内容已从「zcode 专项」扩展为 **Mergence 四个托管型渠道的完整处置计划**。
 >
-> **一句话**：把 ModelMux 的四个托管型子进程渠道，按各自的**法律条件**与**技术条件**逐个处置 ——
-> 能照搬的照搬，能重写的重写，都不能的明确保留 —— 最终 ModelMux 仍是**单可执行文件**、仍是**纯 MIT**。
+> **一句话**：把 Mergence 的四个托管型子进程渠道，按各自的**法律条件**与**技术条件**逐个处置 ——
+> 能照搬的照搬，能重写的重写，都不能的明确保留 —— 最终 Mergence 仍是**单可执行文件**、仍是**纯 MIT**。
 >
 > **三条轨道 + 一个例外**：
 > Track 1 workbuddy 内嵌（**先行**，架构试验田）→ Track 2 A 线 `zcode2api-go`（全新纯 MIT 仓库，**单独发版**）
-> → Track 3 zcode 内嵌进 ModelMux；Track 4 trae 内嵌（上游换成 `connectedGraph/trae2api-web`，**MIT + Go ⇒ 照搬**，可并行）；
+> → Track 3 zcode 内嵌进 Mergence；Track 4 trae 内嵌（上游换成 `connectedGraph/trae2api-web`，**MIT + Go ⇒ 照搬**，可并行）；
 > **new-api 有意保留为子进程**（唯一例外，理由见第二节）。
 >
 > **四渠道的处置只有三种走法**：MIT 同语言 ⇒ **照搬**（workbuddy / trae）；AGPL 或无许可 ⇒ **独立重写**（zcode）；
@@ -23,9 +23,9 @@
 | # | 决策 | 定于 |
 |---|---|---|
 | 1 | 路线：**P2 源码级合并**（不是进程级调用） | 第 3 轮 |
-| 2 | ModelMux **保持 MIT**；目标态是**全部 MIT** | 第 3 轮 |
+| 2 | Mergence **保持 MIT**；目标态是**全部 MIT** | 第 3 轮 |
 | 3 | **A 线不 fork 上游，建全新空仓库**（不带任何上游文件） | 第 6 轮 |
-| 4 | 顺序：**先写完独立项目并发版 → 再改写合并进 ModelMux** | 第 4 轮 |
+| 4 | 顺序：**先写完独立项目并发版 → 再改写合并进 Mergence** | 第 4 轮 |
 | 5 | 领取：**无人值守自动定时**（Chromium 保留为浏览器资源） | 第 3 轮 |
 | 6 | Chromium 来源：**复用系统已装 Edge**，新增分发体积 **0** | 第 3 轮 |
 | 7 | Node 层：**Go 自写极简 CDP 客户端**替代 `solver_pw.js` | 第 1 / 3 轮 |
@@ -51,8 +51,8 @@
 
 | 类型 | 含义 | 出口怎么实现 |
 |---|---|---|
-| `ManagedProvider` **托管型** | 上游是 ModelMux **拉起的独立子进程** | 子进程自己实现 |
-| `EmbeddedProvider` **内嵌型** | **跑在 ModelMux 进程内**，由本进程直接实现对外出口 | **通用 HTTP 转发**（用户填 `base_url` + `api_keys`） |
+| `ManagedProvider` **托管型** | 上游是 Mergence **拉起的独立子进程** | 子进程自己实现 |
+| `EmbeddedProvider` **内嵌型** | **跑在 Mergence 进程内**，由本进程直接实现对外出口 | **通用 HTTP 转发**（用户填 `base_url` + `api_keys`） |
 
 ⚠️ **「内嵌型」这个词已经被占用**。而本计划要做的是第三类：
 
@@ -90,14 +90,14 @@
 
 1. **AGPL-3.0** —— 与 zcode 同命，源码不可复制进 MIT 项目。
 2. **规模** —— one-api 衍生的完整聚合平台，十万行级；独立重写不现实（zcode 才 ~6,400 行 Python）。重写它就是重写一整个产品。
-3. **职责重叠** —— new-api 本身就是「多渠道聚合底座」，而 ModelMux **已经是**聚合器；把聚合器内嵌进聚合器在架构上无收益。
+3. **职责重叠** —— new-api 本身就是「多渠道聚合底座」，而 Mergence **已经是**聚合器；把聚合器内嵌进聚合器在架构上无收益。
 
-**保留子进程是合法且无疑问的**：进程级调用不构成衍生作品，这正是 ModelMux 现有的既定规则
+**保留子进程是合法且无疑问的**：进程级调用不构成衍生作品，这正是 Mergence 现有的既定规则
 （`presets.go:18x` 该条 `Note` 已写明「只以独立进程方式调用、不随包分发，以免影响本项目自身的许可」）。
 
 若目标必须是「零子进程」，只有两条路，**都不推荐**：
 
-- **(a) 删除 new-api 预设**，同时评估「ModelMux 自身的多渠道聚合（`embedded_providers`，用户直填 `base_url`）是否已覆盖真实需求」。
+- **(a) 删除 new-api 预设**，同时评估「Mergence 自身的多渠道聚合（`embedded_providers`，用户直填 `base_url`）是否已覆盖真实需求」。
 - **(b) 换用 MIT 的 `songquanpeng/one-api`** 再独立重写 —— 同样是十万行级项目，只是没了许可障碍。
 
 ### 2.2 trae 上游更换（第 9 轮修正）
@@ -174,7 +174,7 @@ README 明写「本项目基于 MIT License 许可发布」）⇒ **源码可以
 1. **新实现只依据对外可观测行为**：HTTP 契约、公开文档、真实请求/响应样本。
    **不逐行翻译**、不照抄上游的代码组织 / 命名 / 注释 / 函数划分。
 2. **许可分区声明**：每个仓库的 `LICENSE` 与其内容一致；README 写明来源与分区。
-3. **ModelMux 只吸收自己拥有的代码**（自写实现、或 MIT 项目如 workbuddy），**绝不带入 AGPL 代码**。
+3. **Mergence 只吸收自己拥有的代码**（自写实现、或 MIT 项目如 workbuddy），**绝不带入 AGPL 代码**。
 
 ### 3.3 契约样本只保留结构（重要）
 
@@ -196,14 +196,14 @@ README 明写「本项目基于 MIT License 许可发布」）⇒ **源码可以
 
 这是将来主张「独立实现」的证据链，**不是可选的形式**。
 
-### 3.5 ⚠️ ModelMux 侧必须同步改写的文档
+### 3.5 ⚠️ Mergence 侧必须同步改写的文档
 
 - `README.md:122`「不 `import` AGPL 代码」
 - `README.md:183`「AGPL 项目仅以独立进程方式调用，不构成衍生作品」
 
 这两句在 Track 1/3/4 落地后**必须同步改写**，否则文档与事实不符。
 改法：说明工作方式分两类 —— **workbuddy / trae 是 MIT 来源照搬**（保留版权声明与许可文本）、
-**zcode 是自己独立重写** —— 两者都**不是上游 AGPL 代码**，因此可内嵌且不改变 ModelMux 的 MIT；
+**zcode 是自己独立重写** —— 两者都**不是上游 AGPL 代码**，因此可内嵌且不改变 Mergence 的 MIT；
 **new-api 仍走独立进程**，原规则对它继续适用。
 
 ### 3.6 上游许可文本集中存放（用户定于第 10 轮）
@@ -219,7 +219,7 @@ src/THIRD-PARTY-LICENSES/
 
 - **落点选 `src/` 的原因**：发布导出白名单是 `src web docs tools test` ⇒ 只有放这里**才会被导出**，
   公开仓库里也带着上游许可，合规链不断。
-- **与 ModelMux 自己的 `LICENSE` 分区明确**：仓库根 `LICENSE` = 本项目（MIT）；
+- **与 Mergence 自己的 `LICENSE` 分区明确**：仓库根 `LICENSE` = 本项目（MIT）；
   `src/THIRD-PARTY-LICENSES/` = 上游。
 - **需要登记的**：`workbuddy2api-panel/`（Track 1）、`trae2api-web/`（Track 4）。
   **zcode 不需要** —— 它是独立重写，仓库里没有任何上游代码。
@@ -247,8 +247,8 @@ src/THIRD-PARTY-LICENSES/
 | 生产规模（**W1 实测**） | **17,833 行 / 58 个文件**（另 14,057 行测试 / 46 文件）—— 少于估算的 23,467/74，是因为 W1 已剔除 `cmd/`（5 个入口）与 `internal/panel`（3,502 行自带面板） |
 | **外部进程** | **零** —— `exec.Command` 只出现在 `internal/panel/frontend_test.go`（node 做 JS 语法检查），**生产代码不拉起任何外部进程** |
 | **外部服务** | **Redis 可选** —— `internal/redisstore/redisstore.go` 有 Noop 降级：「未配置 url / 连接失败时降级为 Noop，一切功能照常工作（纯内存模式）」；持久化走 `data/state.json` + `auths/`。**内嵌不会要求用户装 Redis** |
-| 新引入依赖 | `go-redis v9.22.0` + 4 个间接（全纯 Go）⇒ ModelMux 直接依赖从 **1 个变 2 个**（现仅 `go-webview2`）。**W1 实测 `go build` 已自动并入 `go.mod`**，并把 `golang.org/x/sys` 从 `v0.0.0-20210218145245` 升到 `v0.30.0` |
-| 附带可弃 | `internal/panel` 自带的 `index.html` + `app.js`（go:embed）—— ModelMux 已有 `upstream.js`（W1 已剔除） |
+| 新引入依赖 | `go-redis v9.22.0` + 4 个间接（全纯 Go）⇒ Mergence 直接依赖从 **1 个变 2 个**（现仅 `go-webview2`）。**W1 实测 `go build` 已自动并入 `go.mod`**，并把 `golang.org/x/sys` 从 `v0.0.0-20210218145245` 升到 `v0.30.0` |
+| 附带可弃 | `internal/panel` 自带的 `index.html` + `app.js`（go:embed）—— Mergence 已有 `upstream.js`（W1 已剔除） |
 | `cmd/` 五入口 | `server` / `login` / `signin` / `credit` / `trial`；内嵌只需 `server`（`login` 的 OAuth 能力已是 HTTP 端点，`upstream.js` 已在调）（W1 已剔除） |
 | **需保留的 embed 资源** | `prompt/defaultprompt.md`（2,172 B）+ `upstream/model.json`（2,992 B）—— 落位脚本**必须一并复制**，否则编译报 `pattern xxx: no matching files found` |
 
@@ -265,7 +265,7 @@ src/THIRD-PARTY-LICENSES/
 - **W1｜源码落位** ✅ **已完成**：复制进 `src/internal/provider/workbuddy/`，去掉 `cmd/` 中不需要的入口与自带面板；
   **保留上游文件头与许可声明**（MIT 允许复制，但要求保留版权声明）。
   实测落位 **104 个 Go 文件（13 个包）** + 2 个 embed 资源；改写 **91 处导入路径**
-  （`github.com/linguo2625469/workbuddy2api-panel/internal/*` → `modelmux/internal/provider/workbuddy/*`）；
+  （`github.com/linguo2625469/workbuddy2api-panel/internal/*` → `mergence/internal/provider/workbuddy/*`）；
   **CRLF → LF 归一**（上游全 CRLF，Go 标准是 LF，否则 `gofmt -l` 全红）；
   `gofmt -w` 收尾（导入改写打乱了字典序）。
   许可文本落 `src/THIRD-PARTY-LICENSES/workbuddy2api-panel/LICENSE`（见 3.6）。
@@ -281,12 +281,12 @@ src/THIRD-PARTY-LICENSES/
   - `presets.go` 的 `workbuddy` 模板改为 `Mode: native, Kind: workbuddy`，用 `LegacyCommands` 认老配置的 `wb2api.exe`；
   - 面板侧：`web/app.js` 回传 `mode` / `gateway_kind` / `data_dir`，原生型自动隐藏子进程专有字段。
 - **W3｜回归** ✅ **已完成**（结果见 4.5）。
-- **W4｜发版**：并入 ModelMux 的一次常规发版（不单独发版；单独发版的是 Track 2 的 A 线）。
+- **W4｜发版**：并入 Mergence 的一次常规发版（不单独发版；单独发版的是 Track 2 的 A 线）。
 
 ### 4.4 W2 必须验证的四件事
 
 1. 保留 URL 形态 + 进程内 dispatch ⇒ `upstream.js`（63,766 字节）**真的零改动**？
-2. workbuddy 的 `config.json` → ModelMux 配置项映射（保留「不覆盖已有 env」语义）。
+2. workbuddy 的 `config.json` → Mergence 配置项映射（保留「不覆盖已有 env」语义）。
 3. `presets.go` 摘掉 workbuddy 托管预设后，注册表与预设识别的语义变化。
 4. `test/verify_upstream_ui.py`（51 项）+ `test/verify_side_console.py`（59 项）**全绿**。
 
@@ -304,7 +304,7 @@ src/THIRD-PARTY-LICENSES/
 | — | `verify_claim.py` / `verify_zcode_accounts.py` / `verify_pick_ui.py` / `verify_theme.py` / `verify_silent_minimize.py` / `gui_check.py` / `check_sources.py` | ✅ 11/11 · 44/44 · 22/22 · 16/16 · 8/8 · 全通过 · 8/8 |
 | — | `go build` / `go vet` / `go test ./...` / `gofmt -l` / `build.py --check` | ✅ 零输出 / 零输出 / 全 ok / 空 / 7 个文件逐字节一致 |
 
-**回归验证的关键前提**：这轮跑的是**真实配置**（`modelmux/config/modelmux.json`），它的 `workbuddy`
+**回归验证的关键前提**：这轮跑的是**真实配置**（`mergence/config/mergence.json`），它的 `workbuddy`
 与 `zcode` 都**没有 `mode` 字段** ⇒ 被归一成子进程形态 ⇒ 这三条 UI 套件实际验证的是
 「老配置升级后行为不变」这条最要紧的回归线，而不是新功能。原生形态由
 `internal/native/workbuddy` 的 e2e（起真监听 + 真发 HTTP）与 `internal/web` 的
@@ -400,7 +400,7 @@ README 里的溯源句照写（事实陈述，不涉及代码复制）。
 | **A0** | ✅ | 仓库 `LinYuanNull/zcode2api-go`（MIT，public）已建；30 文件骨架（`cmd/` + 21 个 `internal/` 包 + CI）；首次提交 `6746d16`；CI run `37130662051` **success** |
 | **A1** | ✅ | **43 条样本覆盖 25/25 路由**（22 管理 + 3 网关）；采样器 `tools/samplecontract/`（Go，仅标准库，键规则 + 取值规则两层脱敏）；`PROVENANCE.md` 采样记录表（25 行）+ 未覆盖分支清单；提交 `1444c2c`；CI run `37131568954` **success** |
 | **A2** | ✅ | **落盘契约 + 双向读校验**。契约 `docs/contract/store/`（`schema.sql` / `account-data-shape.json` / `fingerprint-shape.json` / `observations.md` 23 条规则）；夹具 `fixtures/target.db`（36864 B，6 条账号）+ 4 个原始响应体，由 `tools/samplefixture/` 在独立临时数据目录生成；实现 `store` / `models` / `fingerprint` / `settings` / `constants`；**25 个测试用例全绿**（含「读库→重编码与靶机原始 `data` 紧凑化后逐字节相同」）；提交 `b68a502`；CI run `37134238424` **success** |
-| **A3** | ✅ | **22 条管理路由 + 鉴权 + settings 读写**。实现 `httpx`（保真编码唯一入口）/ `authadmin`（常数时间比较 + IP 失败锁定）/ `adminapi`（22 路由）/ `server` / `appdir` / `buildinfo`；网关 / 额度 / 领取 / 登录 / 验证码为**显式报错**的占位。**契约回放 43/43**（`internal/contract`，逐字段 + 键序）；**上游自带 `frontend/` 面板真机 38/38**（`tools/e2e_panel.py`，查渲染后 DOM）；**ModelMux 脚本默认模式 44/44、Go 模式 47/47**；`gofmt` / `vet` / `test` 全绿 + `tools/spec_reorder.py --check` 通过（已接 CI）；提交 `1696bc9`；CI run `37141410784` **success** |
+| **A3** | ✅ | **22 条管理路由 + 鉴权 + settings 读写**。实现 `httpx`（保真编码唯一入口）/ `authadmin`（常数时间比较 + IP 失败锁定）/ `adminapi`（22 路由）/ `server` / `appdir` / `buildinfo`；网关 / 额度 / 领取 / 登录 / 验证码为**显式报错**的占位。**契约回放 43/43**（`internal/contract`，逐字段 + 键序）；**上游自带 `frontend/` 面板真机 38/38**（`tools/e2e_panel.py`，查渲染后 DOM）；**Mergence 脚本默认模式 44/44、Go 模式 47/47**；`gofmt` / `vet` / `test` 全绿 + `tools/spec_reorder.py --check` 通过（已接 CI）；提交 `1696bc9`；CI run `37141410784` **success** |
 | **A4** | ✅ | **转发链路**。`/v1/messages` 保序改写出站 + 逐字节透传响应（含 SSE 逐帧 flush）；`/v1/chat/completions` 白名单重建出站 + 转 OpenAI 形状（JSON / SSE）；调度器「逐个账号试到成功」，错误分类（401/403/402/429/5xx/传输失败/客户端错）与冷却逐条对齐基线；出站代理语义照实（messages 走环境代理）。出站逐字节对照工具 `tools/mitmupstream`；提交 `042b76c` |
 | **A5** | ✅ | **额度 / 领取 / 登录 三条管理侧链路（限已采样分支）**。登录真打上游 `oauth/cli/init` / `poll`（`flow_id` 用上游给的）；额度**三条并发** + 同批共用 `X-Request-Id` + FRESH/CACHED 按**键名**区分（`result` vs `message`）+ `invalid` 后**永不再查**；领取四条路由的凭据失效分支与旁录**逐字节一致**。四个提交：`fc2ca6c`(A5-1 出站采样工具+契约) / `eaaf90a`(A5-2 登录) / `497e6cf`(A5-3 额度) / `dd8b99d`(A5-4 领取)。**未采样 ⇒ 501**（额度 `200` 成功体、领取成功路径、OAuth `ready` 之后落库）。e2e：额度 **31/31**、领取 **35/35** |
 | **A6** | ✅ | **验证码（Go 自写 CDP 客户端）**。`internal/captcha/cdp` 手写极简 CDP（WebSocket = RFC 6455 客户端子集，纯标准库）+ `internal/captcha` 求解器（用时现解，只驱动**系统已装** Edge/Chrome）。**实测更正计划两处**：① 命令是 **7 条**不是 6 条（漏了 `Target.attachToTarget`，flatten 取 `sessionId`）；② `Emulation.setUserAgentOverride` 的 `userAgentMetadata` 里 `platform`/`platformVersion`/`architecture`/**`model`**/`mobile` 是**必需项**，加 `omitempty` 就整条 `-32602`。另有**两处契约更正**：`claim/captcha-config` 由 A5-4 的空配置改为**样本同值**（空 `scene_id` 会让面板控件不可用），且该路由**要出站**（拉 `GET /api/v1/client/configs`，600s 缓存）。真机解出 280 字符凭据（连续 3/3）；提交 `9a0c757`；e2e **17/17** |
@@ -448,7 +448,7 @@ README 里的溯源句照写（事实陈述，不涉及代码复制）。
    这一层专门抓「回放测试抓不到」的问题：字段少一个、名字错一个、空容器给成 `null`，
    回放可能照样绿，面板却白屏。属 A5/A6 的分支（JWT 额度刷新、领取、OAuth 登录）
    **不跳过**，改为断言面板上出现「失败」回执 —— 把「我们还不支持」也钉成可观测行为。
-3. **下游消费方端到端**：ModelMux 的 `test/verify_zcode_accounts.py` 把托管渠道的
+3. **下游消费方端到端**：Mergence 的 `test/verify_zcode_accounts.py` 把托管渠道的
    `command` 指向 Go 可执行文件（`ZCODE_UPSTREAM_EXE`）⇒ **Go 模式 47/47**；
    默认（假网关）模式仍 **44/44**，确认未回归。
 
@@ -471,11 +471,11 @@ README 里的溯源句照写（事实陈述，不涉及代码复制）。
 
 ---
 
-## 六、Track 3：zcode 内嵌进 ModelMux
+## 六、Track 3：zcode 内嵌进 Mergence
 
 **前提**：Track 1 的接缝架构已验证 + Track 2 的 v0.1.0 已发版并稳定。
 
-- **B0｜改写为 provider 形态（是「改写」，不是「复制」）**：把 A 线的核心逻辑按 ModelMux 现有接口面
+- **B0｜改写为 provider 形态（是「改写」，不是「复制」）**：把 A 线的核心逻辑按 Mergence 现有接口面
   （`internal/provider` 的 `Upstream` / `Channel` / `Registry`）**重新组织**成 `src/internal/provider/zcode/`。
   **去掉**：独立 HTTP server、CLI。**保留并改写**：store / models / 调度器 / body 变换 / identity /
   `openai_compat` / quota / claim / captcha。
@@ -487,11 +487,11 @@ README 里的溯源句照写（事实陈述，不涉及代码复制）。
   | 代理路径 | **保留** `/api/channels/zcode/upstream/<rest>` 的 URL 形态，只换实现（**不是删除**，前端零改动） |
   | 前端 | `web/zcode.js` 目标是**零改动** |
   | **密码** | `config.Claim.AdminKey` 与网关侧 admin_key 的**两处同步取消** —— 合并后只剩一处。**这是最大的简化收益**，同时消掉「只改一边就整块 401」的经典故障 |
-  | settings | 上游 `.env` 那套改为 ModelMux 配置项（保留「不覆盖已有 env」语义） |
+  | settings | 上游 `.env` 那套改为 Mergence 配置项（保留「不覆盖已有 env」语义） |
 - **B2｜回归**：全量 e2e（第九节基线）+ `build.py` + `go vet/test` + `gofmt`。
   **验收**：现有 11 个脚本全绿；删除 Python 目录后功能不受影响。
-- **B3｜发布 ModelMux v0.3.0**：同步改写 `README.md:122/183`（见 3.5）与「已并入的 Provider」表。
-  **验收**：发布物里不含任何 AGPL 代码；`github.com/LinYuanNull/modelmux` 仍是 MIT。
+- **B3｜发布 Mergence v0.3.0**：同步改写 `README.md:122/183`（见 3.5）与「已并入的 Provider」表。
+  **验收**：发布物里不含任何 AGPL 代码；`github.com/LinYuanNull/mergence` 仍是 MIT。
 
 ---
 
@@ -513,7 +513,7 @@ README 里的溯源句照写（事实陈述，不涉及代码复制）。
   → `docs/contract/*.json`（只保留结构，见 3.3）。
 - **T1｜源码落位**：照搬进 `src/internal/provider/trae/`，**保留上游文件头与 MIT 声明**。
   **去掉**：`cmd/` 中不需要的入口、`Dockerfile` / `docker-compose.yml` / `login.sh` / `signin.sh` / `credit.sh`
-  （这些运维职责改由 ModelMux 面板与接口承担）。
+  （这些运维职责改由 Mergence 面板与接口承担）。
   **保留并接线**：账号池调度器、冷却/禁用状态机、签到 scheduler、凭证 store（`auths/` + `state.json`）、
   OpenAI 兼容层、登录闭环回调（`TW2A_CALLBACK_PORT`）。
 - **T2｜接线**：套用 Track 1 已验证的四条接缝（`presets.go` / `proxy.go` / `claim_api.go` / 数据面转发）。
@@ -523,10 +523,10 @@ README 里的溯源句照写（事实陈述，不涉及代码复制）。
   | `presets.go` | trae 从**托管型**预设改为**原生型** provider；`managed_providers` 里的 trae 条目下线 |
   | 代理路径 | **保留** `/api/channels/trae/upstream/<rest>` 的 URL 形态，只换实现（前端零改动） |
   | **签到** | **等同 zcode 的 claim，属接缝 ③**（`claim_api.go`）——**独立第二条路、最容易漏改**，必须一起接 |
-  | 配置映射 | `TW2A_API_KEY` / `TW2A_AUTH_DIR` / `TW2A_STATE_FILE` / `TW2A_ERR_THRESHOLD` / `TW2A_ERR_COOLDOWN` 等 → ModelMux 配置项 |
+  | 配置映射 | `TW2A_API_KEY` / `TW2A_AUTH_DIR` / `TW2A_STATE_FILE` / `TW2A_ERR_THRESHOLD` / `TW2A_ERR_COOLDOWN` 等 → Mergence 配置项 |
   | **设备号** | **新增**：每账号绑定稳定设备号；9074 命中后换号重试（trae 特有风控，见 2.4） |
 
-- **T3｜回归 + 发布**：全量 e2e（第九节基线）+ `build.py` + `go vet/test` + `gofmt`；并入 ModelMux 发版（不单独发版）。
+- **T3｜回归 + 发布**：全量 e2e（第九节基线）+ `build.py` + `go vet/test` + `gofmt`；并入 Mergence 发版（不单独发版）。
 
 ### 7.2 同步修正
 
@@ -614,7 +614,7 @@ Intl Web SOLO remote 协议，并独有 **9074 限流识别**与更细的模型�
 | `routes/pages.py` | 59 | `zcode/pages.go`（`/meta` 等） | 低 |
 | `captcha.py` | 277 | `zcode/captcha.go`（实时求解 + 人工 param 兜底两条通路） | 中 |
 | `captcha_node/solver_pw.js` | 208 | `zcode/cdp/solver.go`（**Go 自写 CDP 客户端**，约 300 行） | **高** |
-| `cli.py` | 262 | 由 ModelMux 面板/接口取代，仅保留必要运维子命令 | 低 |
+| `cli.py` | 262 | 由 Mergence 面板/接口取代，仅保留必要运维子命令 | 低 |
 
 **规模**：Python 生产代码 ~6,400 行；Go 侧预计 **6,000–8,000 行**（含测试）。
 
@@ -688,11 +688,11 @@ Intl Web SOLO remote 协议，并独有 **9074 限流识别**与更细的模型�
 | ~~`linqiu919/trae2api`~~ **弃用** | 无账号池 / 无领取 / 无验证码 + 无 LICENSE 文件 + 已停更 |
 | `trae-local-api` / `dsh-trae-api` **不采用** | 依赖本机 IDE 登录态、破解 Trae CN 的 `tc` 加密（AES-128-CBC + SHA-512） |
 
-**ModelMux 现有接缝（Track 1/3 都要改这四条）：**
+**Mergence 现有接缝（Track 1/3 都要改这四条）：**
 
 | 接缝 | 代码位置 | 备注 |
 |---|---|---|
-| ① 前端原生视图 | `web/upstream.js`（63,766 B，workbuddy）、`web/zcode.js`（48,956 B，zcode） | **都是 ModelMux 自己写的原生视图，不是 iframe**（首页 CSP `default-src 'none'` 无 `frame-src`） |
+| ① 前端原生视图 | `web/upstream.js`（63,766 B，workbuddy）、`web/zcode.js`（48,956 B，zcode） | **都是 Mergence 自己写的原生视图，不是 iframe**（首页 CSP `default-src 'none'` 无 `frame-src`） |
 | ② 控制台代理 | `src/internal/web/proxy.go` `handleChannelUpstream` | **通用托管渠道代理**，workbuddy 也走它（`zcode_panel_test.go` 有 `TestWorkBuddyPanelProxyUnchanged` 断言）⇒ **不能删路径，只能换实现** |
 | ③ **领取执行器（独立第二条路）** | `src/internal/web/claim_api.go` `postClaim`，常量 `claimAdminPath = "/admin/api/claim"` | 直接用 `up.RootURL`，**不走 ②** ⇒ 最容易漏改 |
 | ④ 数据面转发 | `internal/provider` forward → `up.BaseURL` | `/v1`，含 SSE |
@@ -737,8 +737,8 @@ Track 2   A 线 zcode2api-go（全新纯 MIT 仓库 · 单独发版）
      ✅           ✅             ✅            ✅            ⏳ 下一步        （每期可独立验证、可随时停手）
                                    ⬇  A 线发版并稳定后
 
-Track 3   zcode 内嵌进 ModelMux
-  B0 改写 provider ─▶ B1 接线（presets/前端/配置） ─▶ B2 全量回归 ─▶ B3 发 ModelMux v0.3.0
+Track 3   zcode 内嵌进 Mergence
+  B0 改写 provider ─▶ B1 接线（presets/前端/配置） ─▶ B2 全量回归 ─▶ B3 发 Mergence v0.3.0
 
 Track 4   trae 内嵌（上游 connectedGraph/trae2api-web · MIT+Go ⇒ 照搬 · 可并行）
   T0 fork+契约采样 ─▶ T1 源码照搬落位 ─▶ T2 四条接缝接线（含签到=接缝③） ─▶ T3 回归+随版发布
@@ -746,9 +746,9 @@ Track 4   trae 内嵌（上游 connectedGraph/trae2api-web · MIT+Go ⇒ 照搬 
 例外      new-api —— 有意保留为托管型子进程，不内嵌（理由见 2.1）
 ```
 
-**当前进度**：① 第三类渠道**已定名 `NativeProvider`**（第一节）✅；② **Track 1 的 W0–W3 已完成**（fork + 104 个 Go 文件落位 + 四条接缝改进程内 dispatch + 全量回归，见 4.5），W4 并入常规发版（不单独发版）；③ **Track 4（trae 内嵌）T0–T3 已完成**（见 7.4）；④ **Track 2 A 线 A0–A7 全部完成，`v0.1.0` 已发布**（`LinYuanNull/zcode2api-go`，见 5.3）✅；⑤ **Track 3 B 线 B0–B2 已完成**（见下，「B 线验收」），**下一步 = B3｜发 ModelMux v0.3.0**。
+**当前进度**：① 第三类渠道**已定名 `NativeProvider`**（第一节）✅；② **Track 1 的 W0–W3 已完成**（fork + 104 个 Go 文件落位 + 四条接缝改进程内 dispatch + 全量回归，见 4.5），W4 并入常规发版（不单独发版）；③ **Track 4（trae 内嵌）T0–T3 已完成**（见 7.4）；④ **Track 2 A 线 A0–A7 全部完成，`v0.1.0` 已发布**（`LinYuanNull/zcode2api-go`，见 5.3）✅；⑤ **Track 3 B 线 B0–B2 已完成**（见下，「B 线验收」），**下一步 = B3｜发 Mergence v0.3.0**。
 
-**B 线验收（2026-10-04 实测）**：`src/internal/provider/zcode/`（25 个包，按 ModelMux 接口面重新组织 A 线业务层）+ `src/internal/native/zcode/`（装配层）落位。
+**B 线验收（2026-10-04 实测）**：`src/internal/provider/zcode/`（25 个包，按 Mergence 接口面重新组织 A 线业务层）+ `src/internal/native/zcode/`（装配层）落位。
 
 - **B0 改写**：契约驱动的业务层整体搬迁（constants / settings / models / pyjson / fingerprint /
   store / agent / identity / bodytransform / compat / scheduler / gateway / quota / claim /
@@ -774,4 +774,4 @@ Track 4   trae 内嵌（上游 connectedGraph/trae2api-web · MIT+Go ⇒ 照搬 
 
 Track 4 因上游换为 **MIT + Go**，与 **Track 1 同路**（照搬，非重写）⇒ 可在 Track 1 的 W2 把接缝架构跑通后**立即并行铺开**。
 
-Track 2 的 A 线**已全部完成并发布 `v0.1.0`**：A1 契约固化（44 条样本 / 25 条路由）、A2 落盘契约（双向读校验）、A3 管理 API（22 路由 + 鉴权 + settings）、A4 转发链路、A5 额度/领取/登录、A6 验证码（Go 自写 CDP 客户端）、A7 发版。它们既是后续每一期的判据来源，也是「独立实现」主张的唯一证据链。**仍未覆盖、且不凭猜测补全**的分支集中在三处：额度查询的 `200` 成功体、领取的成功路径（上游端点表里根本没有领取端点）、OAuth `ready` 之后的凭据落库 —— 三者都需要**真实账号**走完整授权才能采样，当前一律显式 `501`。**A6 遗留**：预解池 / `CAPTCHA_TOKEN_TTL` / `invalidate()` 三处未实现（用时现解已够用：领取频率是每天一次）。Track 3 的 B0 起，改写时按 ModelMux 的 `Upstream` / `Channel` / `Registry` 接口面重新组织，去掉独立 HTTP server 与 CLI，保留并改写 store / 调度器 / body 变换 / identity / `openai_compat` / quota / claim / captcha。
+Track 2 的 A 线**已全部完成并发布 `v0.1.0`**：A1 契约固化（44 条样本 / 25 条路由）、A2 落盘契约（双向读校验）、A3 管理 API（22 路由 + 鉴权 + settings）、A4 转发链路、A5 额度/领取/登录、A6 验证码（Go 自写 CDP 客户端）、A7 发版。它们既是后续每一期的判据来源，也是「独立实现」主张的唯一证据链。**仍未覆盖、且不凭猜测补全**的分支集中在三处：额度查询的 `200` 成功体、领取的成功路径（上游端点表里根本没有领取端点）、OAuth `ready` 之后的凭据落库 —— 三者都需要**真实账号**走完整授权才能采样，当前一律显式 `501`。**A6 遗留**：预解池 / `CAPTCHA_TOKEN_TTL` / `invalidate()` 三处未实现（用时现解已够用：领取频率是每天一次）。Track 3 的 B0 起，改写时按 Mergence 的 `Upstream` / `Channel` / `Registry` 接口面重新组织，去掉独立 HTTP server 与 CLI，保留并改写 store / 调度器 / body 变换 / identity / `openai_compat` / quota / claim / captcha。

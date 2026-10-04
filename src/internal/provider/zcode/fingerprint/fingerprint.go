@@ -13,7 +13,7 @@ package fingerprint
 import (
 	"math/rand/v2"
 
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/models"
 )
 
 // 观测到的取值池。顺序无意义（取值是随机的），列在这里是为了可审计。
@@ -85,6 +85,3 @@ func (g *Generator) Next() models.Fingerprint {
 		DeviceMID: models.NewUUID4(),
 	}
 }
-
-// Default 是给「不想持有生成器」的调用方用的便捷函数。
-func Default() models.Fingerprint { return New().Next() }

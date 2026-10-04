@@ -18,7 +18,7 @@
           "name": "",
           "version": ""
         },
-        "description": "ModelMux",
+        "description": "Mergence",
         "minimum-os": "win7",
         "execution-level": "asInvoker",
         "ui-access": false,
@@ -43,12 +43,12 @@
         "info": {
           "0409": {
             "CompanyName": "",
-            "FileDescription": "ModelMux",
+            "FileDescription": "Mergence",
             "FileVersion": "1.0.0.0",
-            "InternalName": "ModelMux",
+            "InternalName": "Mergence",
             "LegalCopyright": "",
-            "OriginalFilename": "ModelMux.exe",
-            "ProductName": "ModelMux",
+            "OriginalFilename": "Mergence.exe",
+            "ProductName": "Mergence",
             "ProductVersion": "1.0.0.0",
             "Comments": "多家 API 聚合网关 · 桌面应用"
           }

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // realmPool 构造一个含 cn/global 账号的池，并确保 globalEnabled 开关开启（缺省）。

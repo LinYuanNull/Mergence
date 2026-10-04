@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/redisstore"
+	"mergence/internal/provider/workbuddy/redisstore"
 )
 
 // countingStore 记录镜像调用次数的假 Store（不联网）。

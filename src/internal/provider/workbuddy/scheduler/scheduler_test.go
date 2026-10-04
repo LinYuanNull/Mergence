@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/pool"
-	"modelmux/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/pool"
+	"mergence/internal/provider/workbuddy/upstream"
 )
 
 func TestNextFire(t *testing.T) {

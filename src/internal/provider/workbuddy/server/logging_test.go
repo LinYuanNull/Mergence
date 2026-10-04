@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/reqlog"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/reqlog"
 )
 
 // captureStdout 重定向 os.Stdout（连同 chatLogOut，见 SetChatLogOutput 的注入点）

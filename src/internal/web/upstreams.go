@@ -6,8 +6,8 @@
 package web
 
 import (
-	"modelmux/internal/orchestrator"
-	"modelmux/internal/provider"
+	"mergence/internal/orchestrator"
+	"mergence/internal/provider"
 )
 
 // buildUpstreams 组装当前全部可路由上游。

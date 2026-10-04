@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/zcode/captcha/cdp"
+	"mergence/internal/provider/zcode/captcha/cdp"
 )
 
 // 这个文件里的用例**默认全部跳过**，因为它们要真起一个系统浏览器、还真联网到

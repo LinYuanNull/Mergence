@@ -3,8 +3,8 @@ package adminapi
 import (
 	"testing"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
 )
 
 // TestDetectMode 固化凭据形态判据。

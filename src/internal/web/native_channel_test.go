@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // rawManaged 取 /api/channels/raw 的原始返回（托管型渠道的完整可编辑配置）。

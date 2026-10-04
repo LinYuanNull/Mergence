@@ -3,8 +3,8 @@
 // 指标有两个来源，必须分开处理而不是混成一个数字：
 //
 //	API 型平台（内嵌型渠道）
-//	    数据源是 ModelMux 自己的计量：每次转发都记了 token 与缓存，
-//	    费用 = token × 价格表。这是**估算**——ModelMux 只是网关，
+//	    数据源是 Mergence 自己的计量：每次转发都记了 token 与缓存，
+//	    费用 = token × 价格表。这是**估算**——Mergence 只是网关，
 //	    不知道上游实际扣了多少（有折扣、赠送额度、中转站倍率都会让两者不等）。
 //	    所以费用字段一律带 known 标记，绝不用 0 冒充「没花钱」。
 //
@@ -29,14 +29,14 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/metrics"
-	"modelmux/internal/provider"
+	"mergence/internal/metrics"
+	"mergence/internal/provider"
 )
 
 // 拉取托管型上游用量时的失败原因。
 //
 // 刻意把「为什么读不到」写清楚：面板要把原因原样显示给用户，
-// 一句「加载失败」会让人以为是 ModelMux 本身坏了。
+// 一句「加载失败」会让人以为是 Mergence 本身坏了。
 var (
 	errNotManaged    = errors.New("内嵌型渠道没有独立管理 API")
 	errNoRoot        = errors.New("渠道缺少子进程地址")

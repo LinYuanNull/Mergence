@@ -1,11 +1,11 @@
 /* zcode.js zcode2api 控制台：账号池 / 运行监控 / 网关设置。
  *
  * 为什么是原生视图而不是 iframe：
- *   1. ModelMux 首页的 CSP 是 `default-src 'none'`，没有 `frame-src`——
+ *   1. Mergence 首页的 CSP 是 `default-src 'none'`，没有 `frame-src`——
  *      iframe 会被浏览器直接拦掉，根本不会加载；
  *   2. 上游面板（zcode2api）自带前端 localStorage 登录门（auth.js 把后台
  *      密钥存在浏览器里），即使能嵌也过不了鉴权，除非把密码交给浏览器。
- * 所以这里改成「原生视图 + 由 ModelMux 服务端代理上游管理 API」：
+ * 所以这里改成「原生视图 + 由 Mergence 服务端代理上游管理 API」：
  * 后端把 zcode 系列的请求转到上游 `<root>/admin/api/<path>` 并注入后台密码，
  * 浏览器全程不接触密码——用户「查看不需要输入面板密码」是天然成立的，
  * 而不是靠前端绕过登录门。

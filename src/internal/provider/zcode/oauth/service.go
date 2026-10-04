@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/constants"
 )
 
 // ErrUpstreamUnavailable 表示「发起登录需要上游调用，而当前没有可用的上游」。

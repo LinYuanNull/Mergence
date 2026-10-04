@@ -1,4 +1,4 @@
-// logging.go ModelMux 结构化日志基座。
+// logging.go Mergence 结构化日志基座。
 //
 // 解决四个具体问题：
 //  1. 无结构 —— 全部走 log/slog，字段化输出，文件为 JSONL（可 jq/grep）
@@ -36,11 +36,6 @@ func NewReqID() string {
 }
 
 var seq atomic.Uint32
-
-// WithReqID 把 req_id 放进 context。
-func WithReqID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, reqIDKey, id)
-}
 
 // ReqIDFrom 从 context 取出 req_id，没有则返回空串。
 func ReqIDFrom(ctx context.Context) string {
@@ -330,7 +325,7 @@ func New(level, dir string, ringSize, maxFileMB int) (*Logger, error) {
 		mu:    &sync.Mutex{},
 	}
 	if dir != "" {
-		rf, err := newRotatingFile(filepath.Join(dir, "modelmux.log"), maxFileMB)
+		rf, err := newRotatingFile(filepath.Join(dir, "mergence.log"), maxFileMB)
 		if err == nil {
 			h.file = rf
 		}

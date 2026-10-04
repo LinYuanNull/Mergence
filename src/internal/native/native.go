@@ -1,7 +1,7 @@
-// Package native 让上游的 HTTP 服务跑在 ModelMux 自己的进程里。
+// Package native 让上游的 HTTP 服务跑在 Mergence 自己的进程里。
 //
-// 与「托管型」的区别只有一个：**谁提供服务**。托管型是「ModelMux 拉起一个独立
-// 子进程，再用 HTTP 打它」；原生型是「ModelMux 自己装配上游的 http.Handler，
+// 与「托管型」的区别只有一个：**谁提供服务**。托管型是「Mergence 拉起一个独立
+// 子进程，再用 HTTP 打它」；原生型是「Mergence 自己装配上游的 http.Handler，
 // 在本进程内起一个只绑回环地址的服务，再用 HTTP 打它」。
 //
 // ── 为什么仍然走 HTTP，而不是把上游拆成函数直接调用 ──────────────
@@ -39,8 +39,8 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
+	"mergence/internal/config"
+	"mergence/internal/logging"
 )
 
 // Service 一个进程内原生服务的装配结果。
@@ -54,7 +54,7 @@ type Service struct {
 
 // Boot 装配一个原生服务。
 //
-// cfg 是该渠道在 ModelMux 配置里的条目（原生实现可以从它的 Env / Route 里取
+// cfg 是该渠道在 Mergence 配置里的条目（原生实现可以从它的 Env / Route 里取
 // 用户覆盖项）；dataDir 是该实例的独立数据目录，由编排器保证存在且可写——
 // 账号、状态文件、用量记录都落在它下面，与其它实例互不干扰。
 type Boot func(cfg config.ManagedProvider, dataDir string, lg *logging.Logger) (*Service, error)

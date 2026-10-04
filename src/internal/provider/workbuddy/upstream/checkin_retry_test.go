@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // shortBillingRetry 测试用重试间隔（生产 2s 会让单测秒级膨胀）。

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """真实验证：WorkBuddy 渠道的免密钥账号管理代理。
 
-通过 ModelMux 代理读取真实 wb2api 的 /panel/api/overview，
+通过 Mergence 代理读取真实 wb2api 的 /panel/api/overview，
 核对账号数据（与 wb2api 面板一致：昵称/积分/冷却/停用）。
 """
 import json
@@ -16,10 +16,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-# 真实数据目录：与 internal/config.DataDir() 同序 —— MODELMUX_HOME
-# → exe 同级（实测可写，便携形态的默认）→ %LOCALAPPDATA%\ModelMux。
+# 真实数据目录：与 internal/config.DataDir() 同序 —— MERGENCE_HOME
+# → exe 同级（实测可写，便携形态的默认）→ %LOCALAPPDATA%\Mergence。
 def real_home():
-    v = os.environ.get("MODELMUX_HOME", "").strip()
+    v = os.environ.get("MERGENCE_HOME", "").strip()
     if v:
         return v
     try:
@@ -27,18 +27,18 @@ def real_home():
             pass
         return ROOT
     except OSError:
-        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "ModelMux")
+        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "Mergence")
 
 
 HOME = real_home()
-LOG = os.path.join(HOME, "data", "logs", "modelmux.log")
+LOG = os.path.join(HOME, "data", "logs", "mergence.log")
 
 # 只看本次启动之后新增的日志（日志是累积的）
 start_offset = os.path.getsize(LOG) if os.path.isfile(LOG) else 0
 
-env = dict(os.environ, MODELMUX_HEADLESS="1")
+env = dict(os.environ, MERGENCE_HEADLESS="1")
 mm = __import__("subprocess").Popen(
-    [os.path.join(ROOT, "ModelMux.exe")], env=env, cwd=ROOT)
+    [os.path.join(ROOT, "Mergence.exe")], env=env, cwd=ROOT)
 
 results = []
 

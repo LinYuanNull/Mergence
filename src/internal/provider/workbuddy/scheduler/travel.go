@@ -7,9 +7,9 @@ import (
 	"log"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/logfmt"
-	"modelmux/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/logfmt"
+	"mergence/internal/provider/workbuddy/upstream"
 )
 
 const (

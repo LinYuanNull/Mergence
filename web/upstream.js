@@ -1,6 +1,6 @@
 /* upstream.js 上游控制台：积分型平台的完整管理功能。
  *
- * 这里实现了原 WorkBuddy 网关面板（wb2api）的全部功能入口，通过 ModelMux 的
+ * 这里实现了原 WorkBuddy 网关面板（wb2api）的全部功能入口，通过 Mergence 的
  * 管理代理调用（密钥由服务端注入，浏览器不接触上游凭证）：
  *
  *   账号池    overview / 批量签到·旅行·活跃·保活·余额 / 单账号启停·签到·余额·任务·移除
@@ -995,11 +995,6 @@ function cfgSet(o, path, val) {
     x = x[ks[i]];
   }
   x[ks[ks.length - 1]] = val;
-}
-
-function cfgIsSecret(path) {
-  const k = path.split('.').pop() || '';
-  return /key|token|secret|password|cookie/i.test(k);
 }
 
 async function loadConfig(force) {

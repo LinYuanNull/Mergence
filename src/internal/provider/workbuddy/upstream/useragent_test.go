@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // uaCaptureTransport 记录出站请求的 User-Agent。

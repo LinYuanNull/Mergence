@@ -1,4 +1,4 @@
-// server.go ModelMux 自带的 HTTP 服务。
+// server.go Mergence 自带的 HTTP 服务。
 //
 // 两类接口，职责分明：
 //
@@ -24,13 +24,13 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/assets"
-	"modelmux/internal/claim"
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/metrics"
-	"modelmux/internal/orchestrator"
-	"modelmux/internal/provider"
+	"mergence/internal/assets"
+	"mergence/internal/claim"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/metrics"
+	"mergence/internal/orchestrator"
+	"mergence/internal/provider"
 )
 
 // 面板前端资源（index.html / *.js / app.css）以 internal/assets 包的内嵌副本兜底，
@@ -375,7 +375,7 @@ func (s *Server) handleCSS(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, map[string]any{"ok": true, "service": "modelmux"})
+	writeJSON(w, map[string]any{"ok": true, "service": "mergence"})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
@@ -411,7 +411,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	minimizeToTray := s.currentConfig().Tray.MinimizeToTray
 
 	writeJSON(w, map[string]any{
-		"service":          "modelmux",
+		"service":          "mergence",
 		"uptime_sec":       int(time.Since(s.start).Seconds()),
 		"home":             s.home,
 		"base_url":         s.BaseURL(),

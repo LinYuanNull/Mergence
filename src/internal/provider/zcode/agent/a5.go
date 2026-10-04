@@ -25,9 +25,9 @@ import (
 	"net/http"
 	"strings"
 
-	"modelmux/internal/provider/zcode/identity"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/pyjson"
+	"mergence/internal/provider/zcode/identity"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/pyjson"
 )
 
 // A5 端点。**硬编码** —— 与 `MessagesURL` 同样的契约：端点逐字固定、不可配。

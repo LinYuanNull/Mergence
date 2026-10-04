@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 func TestNoteCheckinDoneMarksToday(t *testing.T) {

@@ -2,6 +2,46 @@
 
 本项目的版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+**架构梳理与代码清理。不改运行时行为，对外契约、配置格式、目录结构均不变。**
+
+### 移除（未引用代码与废弃物）
+
+- **19 个非冻结区的 Go 死符号**（`deadcode -test ./...` 判定 + 逐条 grep 复核，
+  剔除冻结区与同名误报）：
+  `desktop` 的 `Shell.Title`、`Shell.title` 字段、`ParsePort`、`unregisterWnd`；
+  `logging.WithReqID`；`orchestrator` 的 `nativeHandle.Wait`、`Orchestrator.Get`、
+  `EnsureAddr`、`PortAllocator.Snapshot`；`provider` 的 `extractTotalTokens`、
+  `ExtractStreamTokens`、`ApplyPreset`；`zcode` 的 `fingerprint.Default`、
+  `Gateway.hasUsableAccount`、`ModelsFromList`、`FingerprintOf`、
+  `OrderedObject.Has/.Raw/.Take`、`isClientError`、`Patch.IsEmpty`；
+  以及 `zcode/models` 测试里从未被调用的 `probeString`。
+  连带清掉因此变成孤儿的 import（`orchestrator` 的 `net`、`shell` 的 `strconv`）。
+- **前端 `web/upstream.js` 的 `cfgIsSecret()`**：全仓唯一引用就是它自己的定义，
+  现役实现改为按 `ct === 'secret'` 判断。⇒ 该文件字节数**不再是 63,766 B**，
+  但 v0.3.0 那条「四条接缝一行不改」的结论不受影响——删的是一处从未被调用的
+  私有函数，接缝契约本身没有改动。
+- **两个只有 `doc.go` 的空包**：`zcode/install`、`zcode/telemetry`（零符号、零 import；
+  注释写「对应计划中的 A5 阶段」，而 A5 实现落在 `zcode/agent/a5.go`）。
+- **失效的截图脚本 `test/shot_tools/shots_newui.py`**：它调用前端已不存在的
+  `showPage(...)`（现役是 `setView`），跑起来什么都截不到；`shots_desktop.py` 是替代品。
+- **无引用的开发脚本**：`tools/icon/gen_icon.py`、`tools/icon/build_icon.py`
+  （均为 WorkBuddy2API 时代产物；前者还默认输出到 `src/app.ico`，误跑会覆盖真图标）、
+  `tools/win/mklnk.vbs`、`tools/win/ls_lnk.py`。
+
+### 修正
+
+- `.gitignore` 与 `tools/release/backup_project.py` 补上 `test/zcacc_home`、
+  `test/zcnative_home` 两个测试隔离目录——它们此前既没被忽略（可能被误提交），
+  也会被整棵打进全量快照。
+- README 的 PE 资源一节原本给的命令是 `akavel/rsrc -ico app.ico -o appres.syso`，
+  **这条指令会让 DPI 清单与版本信息静默丢失**。改为 go-winres 的正确命令
+  （`--in winres/winres.json --out appres.syso --no-suffix --arch amd64`），
+  并说明 `src/app.ico` 是图标母版、`go build` 并不消费它。
+- README 的测试前置条件表补齐 `verify_zcode_accounts.py`，并写明
+  `verify_silent_minimize.py` 可用 `MERGENCE_PID` 锁定目标进程。
+
 ## [0.3.0] - 2026-10-04
 
 **托管渠道新增「进程内原生」运行方式，workbuddy 渠道不再需要外部 exe。**
@@ -10,8 +50,8 @@
 ### 新增
 
 - **`mode` 字段：托管渠道的两种运行方式**
-  - `mode: "process"`（**空值等价**）：保持原行为，由 ModelMux 拉起独立子进程。
-  - `mode: "native"`：ModelMux 自己装配上游的 `http.Handler`，在本进程内起一个
+  - `mode: "process"`（**空值等价**）：保持原行为，由 Mergence 拉起独立子进程。
+  - `mode: "native"`：Mergence 自己装配上游的 `http.Handler`，在本进程内起一个
     **只绑 `127.0.0.1:0`** 的服务。端口由内核分配，不进 `ports.json` 端口表
     （该表是给「用户可能手工填进别处的外链地址」用的）。
   - 原生型**仍然绕回环 HTTP** 而不拆成函数调用：上游是一整套 `http.ServeMux` 应用，
@@ -86,20 +126,20 @@
 ## [0.2.1] - 2026-10-03
 
 **目录与发布形态整理。对外契约、配置格式与 `/v1` 行为完全不变**——升级可直接覆盖 exe，
-已有的 `config/modelmux.json` 原样可用。
+已有的 `config/mergence.json` 原样可用。
 
 ### 变更
 
-- **根目录按职责拆开**：根目录现在只剩 `ModelMux.exe` 与 `README.md` / `LICENSE` / `.gitignore`，
+- **根目录按职责拆开**：根目录现在只剩 `Mergence.exe` 与 `README.md` / `LICENSE` / `.gitignore`，
   其余各归其位 —— `src/`（Go 源码，模块根）、`web/`（面板前端）、`config/`（用户配置）、
   `data/`（日志 / 用量 / 缓存 / 托管实例）、`test/`（端到端验证）、`tools/`（开发与发布脚本）、
   `docs/`（设计与改造记录）。
 - **前端资源外置 + 内嵌兜底**：面板前端以仓库根的 `web/` 为**唯一真源**，运行时优先读取
   exe 同级的 `web/`（改完即生效，便于调试），读不到时回落到编进 exe 的内嵌副本。
   **删掉 `web/` 应用照常工作**，只是前端不能外置调整。
-- **数据目录改为便携形态**：默认跟 exe 同级（`config/modelmux.json` + `data/`），
+- **数据目录改为便携形态**：默认跟 exe 同级（`config/mergence.json` + `data/`），
   整个文件夹拷到哪、配置与数据就跟到哪。exe 所在目录**实测不可写**时（只读介质 /
-  受控文件夹访问 / 组策略），按 `MODELMUX_HOME` → `%LOCALAPPDATA%\ModelMux` → `%TEMP%\ModelMux` 依次回落。
+  受控文件夹访问 / 组策略），按 `MERGENCE_HOME` → `%LOCALAPPDATA%\Mergence` → `%TEMP%\Mergence` 依次回落。
 - WebView2 用户数据目录由 `webview2/` 更名为 `data/cache/`。
 
 ### 工程
@@ -111,7 +151,7 @@
 - 全量回归：`verify.py` 121 项、上游控制台 51 项、侧栏控制台 57 项、布局 38 项、拉取模型 22 项、
   首帧主题 16 项、限时领取 11 项、GUI 生命周期 9 项、静默最小化 8 项、源码不变式 8 项，全部通过。
 
-[0.2.1]: https://github.com/LinYuanNull/modelmux/releases/tag/v0.2.1
+[0.2.1]: https://github.com/LinYuanNull/mergence/releases/tag/v0.2.1
 
 ## [0.1.0] - 2026-10-03
 
@@ -147,11 +187,11 @@
 - 结构化日志（环形缓冲 + 文件轮转）
 - 限时套餐定时领取（默认关闭，可设时间窗口自动领取，也可手动触发）
 - 有序退出：托盘图标移除 → 窗口关闭 → 托管子进程按树回收 → 状态落盘，不留幽灵图标与孤儿进程
-- 无界面模式（`-headless` / `MODELMUX_HEADLESS=1`）：把「服务可用」与「窗口可开」解耦，供自动化与 CI 使用
+- 无界面模式（`-headless` / `MERGENCE_HEADLESS=1`）：把「服务可用」与「窗口可开」解耦，供自动化与 CI 使用
 
 ### 工程
 
 - `_e2e/` 端到端验证：假上游覆盖协议分支 + CDP 驱动真实界面点击 + 断言渲染输出
 - 覆盖托管型 provider 全生命周期、端口热切换、托盘与窗口生命周期、首帧主题、限时领取链路
 
-[0.1.0]: https://github.com/LinYuanNull/modelmux/releases/tag/v0.1.0
+[0.1.0]: https://github.com/LinYuanNull/mergence/releases/tag/v0.1.0

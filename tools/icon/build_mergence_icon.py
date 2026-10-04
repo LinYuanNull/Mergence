@@ -1,10 +1,10 @@
-"""把 ModelMux 的 PNG logo 转成多尺寸 BMP-ICO + 预览图。
+"""把 Mergence 的 PNG logo 转成多尺寸 BMP-ICO + 预览图。
 
 处理链：解码 1440×1440 RGBA → 洪泛抠掉纯白底 → 按内容裁剪 → 预乘盒式缩放
 → 生成 16/32/48/64/128/256 → BMP 编码打包 ICO。
 
 用法:
-  python build_modelmux_icon.py <src.rgba 或 .png> <out.ico> [--preview out.png]
+  python build_mergence_icon.py <src.rgba 或 .png> <out.ico> [--preview out.png]
 """
 import os
 import sys

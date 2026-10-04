@@ -1,4 +1,4 @@
-/* ModelMux 面板样式 · 精密仪表
+/* Mergence 面板样式 · 精密仪表
  *
  * 设计主张：界面退后，数字说话。
  *   - 中性色全部往靛蓝 hue(265) 方向 tint 一丝（chroma 0.008–0.02），
@@ -881,8 +881,12 @@ pre {
   .chsplit.editing { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* .modal 默认是全屏遮罩；挂进编辑槽后要变回普通面板 */
-.modal.inline {
+/* .modal 默认是全屏遮罩；挂进编辑槽后要变回普通面板。
+   必须带 :not([hidden])：这里的 display:block 是类选择器，特异性高于浏览器
+   对 [hidden] 的 display:none（属性选择器）。少了这个守卫，unmount 只设
+   hidden 也压不住它，面板会留在槽里、显示在渠道列表正下方。
+   与上面的 .modal:not([hidden]) / .drawer:not([hidden]) 同一范式。 */
+.modal.inline:not([hidden]) {
   position: static; inset: auto; z-index: auto;
   display: block; padding: 0; background: none;
   animation: none;
@@ -894,6 +898,12 @@ pre {
   animation: none;
 }
 .modal.inline .modal-bd { max-height: 68vh; overflow-y: auto; }
+
+/* 「添加平台」整页就是这张表单，不再受上面那个 68vh 观察窗限制：
+   观察窗是给「列表 + 编辑」两栏用的（旁边还要留着列表，编辑区不能长到
+   把整屏占满）。到了独立视图里没有列表要留，再套一层滚动条就变成
+   「页在滚、框也在滚」，长表单填起来很难受。.views 本来就会滚。 */
+#view-add .modal.inline .modal-bd { max-height: none; overflow: visible; }
 
 /* ── 可收起面板 ─────────────────────────────────────────────────
    概览的每块用量、对外出口、渠道概况都是一个独立面板，默认展开。

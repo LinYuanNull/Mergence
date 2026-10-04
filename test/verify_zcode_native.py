@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""原生 zcode（Track 3 / B2）端到端验证：**ModelMux 自己装配**的 zcode 网关。
+"""原生 zcode（Track 3 / B2）端到端验证：**Mergence 自己装配**的 zcode 网关。
 
 与 verify_zcode_accounts.py 的关系
 ---------------------------------
-那个脚本验的是「zcode 面板整块搬进 ModelMux」这件事，上游是**外部进程**
+那个脚本验的是「zcode 面板整块搬进 Mergence」这件事，上游是**外部进程**
 （默认假 zcode2api，`ZCODE_UPSTREAM_EXE` 下换成 A 线的 Go 实现）。
 本脚本验的是 Track 3 之后**没有外部进程**的那种形态：
 
     渠道配置 mode=native + kind=zcode
-      → ModelMux 在**本进程内**装配 zcode 的实现（internal/native/zcode）
+      → Mergence 在**本进程内**装配 zcode 的实现（internal/native/zcode）
       → 起一个只绑回环的临时端口
       → 面板代理 / 领取执行器 / 转发链路照样打它
 
-所以本脚本的判据是：**同一个原生实现，既能被 ModelMux 装配起来、又不是一个黑盒**：
+所以本脚本的判据是：**同一个原生实现，既能被 Mergence 装配起来、又不是一个黑盒**：
   * 装配层面：渠道就绪、console_kind=zcode、端口由内核分配；
   * 管理面：账号 CRUD 经面板代理可用，回执与契约样本同形（键序 / 空容器 / 掩码）；
   * **密码只剩一处**：改 route key（重建渠道）即改密码，不必再动别的设置；
@@ -26,7 +26,7 @@
 验「改一处即生效」最直接的做法就是：同一个数据目录建两次渠道、route key 不同，
 第二次必须用新 key 通过、旧 key 失效 —— 那正是「两处同步」被消除的证据。
 
-前置：`python tools/release/build.py` 已产出仓库根的 ModelMux.exe。
+前置：`python tools/release/build.py` 已产出仓库根的 Mergence.exe。
 用法：`python test/verify_zcode_native.py`
 """
 import json
@@ -45,8 +45,8 @@ sys.path.insert(0, HERE)
 
 ROOT = os.path.dirname(HERE)
 HOME = os.path.join(HERE, "zcnative_home")
-EXE = os.environ.get("MODELMUX_EXE") or os.path.join(ROOT, "ModelMux.exe")
-LOG = os.path.join(HOME, "data", "logs", "modelmux.log")
+EXE = os.environ.get("MERGENCE_EXE") or os.path.join(ROOT, "Mergence.exe")
+LOG = os.path.join(HOME, "data", "logs", "mergence.log")
 
 CHAN = "zcode-native"
 KEY1 = "native-key-one"
@@ -134,7 +134,7 @@ def clean():
     整个 HOME 递归删会被沙箱的批量删除保护拦下（跑到一半失败还更糟），
     所以逐项清固定路径。
     """
-    for rel in ("config", "data/logs/modelmux.log", "data/ports.json",
+    for rel in ("config", "data/logs/mergence.log", "data/ports.json",
                 "data/instances", "data/cache"):
         p = os.path.join(HOME, *rel.split("/"))
         if os.path.isdir(p):
@@ -148,8 +148,8 @@ def clean():
 
 
 def read_access_key():
-    """从生成的配置里读 ModelMux 自己的 access_key（/v1/* 的鉴权凭据）。"""
-    p = os.path.join(HOME, "config", "modelmux.json")
+    """从生成的配置里读 Mergence 自己的 access_key（/v1/* 的鉴权凭据）。"""
+    p = os.path.join(HOME, "config", "mergence.json")
     try:
         d = json.load(open(p, encoding="utf-8"))
     except Exception:
@@ -198,23 +198,23 @@ def wait_ready(base, name=CHAN, timeout=25):
 
 def main():
     if not os.path.isfile(EXE):
-        print("ModelMux.exe 不存在，请先跑 tools/release/build.py：" + EXE)
+        print("Mergence.exe 不存在，请先跑 tools/release/build.py：" + EXE)
         return 1
     clean()
 
     env = dict(os.environ)
-    env["MODELMUX_HOME"] = HOME
-    env["MODELMUX_HEADLESS"] = "1"
+    env["MERGENCE_HOME"] = HOME
+    env["MERGENCE_HEADLESS"] = "1"
     # 出站指向死端口：本脚本不依赖任何真实上游，探测/额度一律走「失败」分支，
     # 让断言与网络无关（同 verify_claim.py 起手）。
     mm = subprocess.Popen([EXE], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         port = wait_port(mm, LOG)
         if not port:
-            print("ModelMux 未启动")
+            print("Mergence 未启动")
             return 1
         base = f"http://127.0.0.1:{port}"
-        print("ModelMux 端口", port)
+        print("Mergence 端口", port)
 
         # ── ① 装配：mode=native/kind=zcode 建得起来且就绪 ──────────
         st, d = create_channel(base, KEY1)
@@ -290,7 +290,7 @@ def main():
 
         # ── ③ 密码只剩一处：route key 即后台密码 ──────────────────────
         # 面板代理自动注入 Bearer（浏览器不接触密码）。用错密码应 401。
-        # 这里不直接打原生端口（那要绕过 ModelMux），而是验「代理带的是对的值」：
+        # 这里不直接打原生端口（那要绕过 Mergence），而是验「代理带的是对的值」：
         # 若代理用错来源，上面的 /accounts 就会 401 —— 它已 200，说明注入正确。
         check("面板代理注入的凭据被原生实现接受（管理面 200 而非 401）",
               st == 200, st)
@@ -309,12 +309,12 @@ def main():
         check("换密码后管理面仍可用（新 key 生效）", st == 200, st)
 
         # ── ④ 转发链路：未采样分支显式报错，绝不伪造成功 ──────────────
-        # ModelMux 自己的 /v1/models（聚合各渠道模型）按 access_key 鉴权。
+        # Mergence 自己的 /v1/models（聚合各渠道模型）按 access_key 鉴权。
         access = read_access_key()
-        check("读到 ModelMux access_key（配置已生成）", bool(access), access)
+        check("读到 Mergence access_key（配置已生成）", bool(access), access)
         st2, ml = get_auth(base, "/v1/models", access)
         blob = json.dumps(ml, ensure_ascii=False)
-        check("ModelMux /v1/models 聚合出 zcode- 前缀的模型",
+        check("Mergence /v1/models 聚合出 zcode- 前缀的模型",
               st2 == 200 and "zcode-" in blob, f"{st2} {blob[:200]}")
 
         # /v1/messages 无真实账号 ⇒ 明确失败（503/未实现），不是 200 假成功。
@@ -338,7 +338,7 @@ def main():
         # 收尾：走优雅退出（/api/quit）并**等进程真的结束**。
         #
         # 必须等：只发 quit 就立刻 terminate/kill，服务端来不及按序回收原生实例
-        # （关账号库、释放回环监听）。残留进程会占住 ModelMux 的**单实例锁**，
+        # （关账号库、释放回环监听）。残留进程会占住 Mergence 的**单实例锁**，
         # 下一轮脚本就报「已有实例在运行」，看起来像被测功能坏了 —— 实为测试
         # 自己的卫生问题。同款收尾见 verify_zcode_accounts.py。
         try:

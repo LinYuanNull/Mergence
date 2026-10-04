@@ -15,7 +15,7 @@ import (
 	"net/http"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // reportPath 活跃上报通道（实测）。

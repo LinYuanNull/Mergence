@@ -1,4 +1,4 @@
-// main.go ModelMux 入口。
+// main.go Mergence 入口。
 //
 // P0（骨架：配置 / 结构化日志 / 动态端口 / 进程编排）
 // P1（托盘与窗口生命周期：关窗驻留托盘，仅托盘「退出」结束进程）
@@ -7,7 +7,7 @@
 // 两种运行形态：
 //
 //	默认        WebView2 桌面壳 + 托盘驻留（面向人）
-//	无界面模式   只跑内置服务，不建窗口不建托盘（-headless / MODELMUX_HEADLESS=1）
+//	无界面模式   只跑内置服务，不建窗口不建托盘（-headless / MERGENCE_HEADLESS=1）
 //
 // 无界面模式不是为了省事——它让「服务本身能不能用」与「窗口能不能开」解耦。
 // 没有它，任何一次端到端验证都必须弹出真实窗口，CI 与自动化测试无从下手。
@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/desktop"
-	"modelmux/internal/logging"
-	"modelmux/internal/orchestrator"
-	"modelmux/internal/provider"
-	"modelmux/internal/web"
+	"mergence/internal/config"
+	"mergence/internal/desktop"
+	"mergence/internal/logging"
+	"mergence/internal/orchestrator"
+	"mergence/internal/provider"
+	"mergence/internal/web"
 
 	// 原生实现注册：空白导入即把 kind=workbuddy 的实现装进 internal/native 的
 	// 注册表，编排器在 mode=native 的渠道上按 kind 取到它。
@@ -38,12 +38,12 @@ import (
 	// 为什么放在 main 而不是 orchestrator 里：编排器只需要知道「有个 kind 要装配」，
 	// 不该依赖具体上游（它要能同时装 workbuddy / zcode / trae，而这些只有 main
 	// 知道这一版带了哪些）。装配点集中在这里，加一个原生实现就是加一行导入。
-	_ "modelmux/internal/native/trae"
-	_ "modelmux/internal/native/workbuddy"
-	_ "modelmux/internal/native/zcode"
+	_ "mergence/internal/native/trae"
+	_ "mergence/internal/native/workbuddy"
+	_ "mergence/internal/native/zcode"
 )
 
-const appTitle = "ModelMux"
+const appTitle = "Mergence"
 
 // 期望的逻辑窗口尺寸（96 DPI）；实际物理尺寸按所在显示器 DPI 换算。
 const (
@@ -79,7 +79,7 @@ func main() {
 		abort(headless, nil, "日志初始化失败", err)
 		return
 	}
-	lg.Info("ModelMux 启动", "home", home, "config", cfgPath, "log_dir", logDir, "headless", headless)
+	lg.Info("Mergence 启动", "home", home, "config", cfgPath, "log_dir", logDir, "headless", headless)
 	for _, w := range warns {
 		lg.Warn("配置提示", "detail", w)
 	}
@@ -141,7 +141,7 @@ func main() {
 		orch.Shutdown(context.Background(), 8*time.Second)
 		_ = lg.Close()
 		desktop.MessageBox(appTitle,
-			err.Error()+"\n\n详细日志：\n"+filepath.Join(logDir, "modelmux.log"), true)
+			err.Error()+"\n\n详细日志：\n"+filepath.Join(logDir, "mergence.log"), true)
 		return
 	}
 
@@ -194,7 +194,7 @@ func main() {
 
 // isHeadless 判断是否以无界面模式运行。
 func isHeadless() bool {
-	if v := strings.TrimSpace(os.Getenv("MODELMUX_HEADLESS")); v == "1" || strings.EqualFold(v, "true") {
+	if v := strings.TrimSpace(os.Getenv("MERGENCE_HEADLESS")); v == "1" || strings.EqualFold(v, "true") {
 		return true
 	}
 	for _, a := range os.Args[1:] {
@@ -249,7 +249,7 @@ func shutdownServices(lg *logging.Logger, orch *orchestrator.Orchestrator,
 		lg.Warn("端口映射落盘失败", "err", err.Error())
 	}
 
-	lg.Info("ModelMux 已退出", "log_dir", logDir, "with_window", withWindow)
+	lg.Info("Mergence 已退出", "log_dir", logDir, "with_window", withWindow)
 	_ = lg.Close()
 }
 

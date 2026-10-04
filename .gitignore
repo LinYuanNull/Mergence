@@ -1,5 +1,5 @@
 # ── 构建产物 ─────────────────────────────────────────────
-/ModelMux.exe
+/Mergence.exe
 *.exe
 *.exe~
 *.syso
@@ -19,6 +19,8 @@ test/gui_home/
 test/ui_home/
 test/claim_home/
 test/shots/
+test/zcacc_home/
+test/zcnative_home/
 
 # ── 本机运行期目录（随机器变化，不进版本库）────────────────
 # config/ 放用户配置（含真实 access_key 与上游密钥）；

@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"modelmux/internal/provider/zcode/bodytransform"
+	"mergence/internal/provider/zcode/bodytransform"
 )
 
 // fixturesDir 契约夹具（靶机实测的 outbound 请求/探针）。

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // trialPath global trial 加油包端点（Maquer/workbuddy-checkin 实测）。

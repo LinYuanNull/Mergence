@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"modelmux/internal/logging"
+	"mergence/internal/logging"
 )
 
 var procPostThreadMessageW = user32.NewProc("PostThreadMessageW")
@@ -70,7 +70,7 @@ func (t *Tray) run() {
 
 	t.threadID = currentThreadID()
 
-	className := "ModelMuxTrayWnd"
+	className := "MergenceTrayWnd"
 	hicon := loadAppIcon(smCXSmIcon)
 	if hicon == 0 {
 		hicon = loadAppIcon(smCXIcon)
@@ -94,7 +94,7 @@ func (t *Tray) run() {
 	hwnd, _, _ := procCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(utf16Ptr(className))),
-		uintptr(unsafe.Pointer(utf16Ptr("ModelMux"))),
+		uintptr(unsafe.Pointer(utf16Ptr("Mergence"))),
 		0, 0, 0, 0, 0,
 		hwndMessage, 0, moduleHandle(), 0,
 	)
@@ -159,7 +159,7 @@ func (t *Tray) addIcon() error {
 	nid.UFlags = nifMessage | nifIcon | nifTip
 	nid.UCallbackMessage = trayCallbackMsg
 	nid.HIcon = t.hicon
-	utf16Into(nid.SzTip[:], "ModelMux · 多账号 API 聚合")
+	utf16Into(nid.SzTip[:], "Mergence · 多账号 API 聚合")
 
 	r, _, err := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid)))
 	if r == 0 {

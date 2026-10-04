@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 func postClose(t *testing.T, base, body string) (int, map[string]any) {
@@ -81,7 +81,7 @@ func TestCloseBehaviorSave(t *testing.T) {
 	}
 
 	// 磁盘：重启后必须还是 false，否则这次设置等于没做
-	onDisk, warns, err := config.Load(filepath.Join(filepath.Dir(s.cfgPath), "modelmux.json"))
+	onDisk, warns, err := config.Load(filepath.Join(filepath.Dir(s.cfgPath), "mergence.json"))
 	if err != nil {
 		t.Fatalf("读回配置失败：%v", err)
 	}

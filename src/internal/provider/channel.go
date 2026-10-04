@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
+	"mergence/internal/config"
+	"mergence/internal/logging"
 )
 
 // Channel 单个可路由上游的运行时。
@@ -57,7 +57,7 @@ const (
 	// ConsoleUnknown 尚未探测出结果（子进程可能还在起）。
 	ConsoleUnknown ConsoleKind = ""
 	// ConsoleGateway 管理 API 与集成面板兼容（wb2api 那套 /panel/api/*），
-	// 账号池 / 任务 / 模型 / 用量等视图可以直接嵌进 ModelMux。
+	// 账号池 / 任务 / 模型 / 用量等视图可以直接嵌进 Mergence。
 	ConsoleGateway ConsoleKind = "gateway"
 	// ConsoleZcode zcode2api 系列网关：管理 API 在 /admin/api，与集成面板不兼容，
 	// 但有**专属适配**（面板代理 + 原生视图），因此不再退化成外链。
@@ -65,7 +65,7 @@ const (
 	// 与 ConsoleGateway 的区别：ConsoleGateway 的上游接口签名和集成面板一致，
 	// 同一套视图能直接复用；ConsoleZcode 的结构完全不同，得走单独的原生视图。
 	// 与 ConsoleWeb 的区别：ConsoleWeb 是「接不进来」，只给一个打开自带面板的
-	// 外链；ConsoleZcode 有 ModelMux 内的专属视图与代理，不是外链。
+	// 外链；ConsoleZcode 有 Mergence 内的专属视图与代理，不是外链。
 	ConsoleZcode ConsoleKind = "zcode"
 	// ConsoleWeb 只有自带网页面板，集成面板只给一个外链入口。
 	ConsoleWeb ConsoleKind = "web"
@@ -283,7 +283,7 @@ type ChannelStatus struct {
 
 	// AccountCount 托管渠道在上游账号池里的账号数。
 	//
-	// 为什么要它：账号是**上游子进程持有的运行时数据**（ModelMux 侧不落库），
+	// 为什么要它：账号是**上游子进程持有的运行时数据**（Mergence 侧不落库），
 	// 而界面要按「有没有账号」决定平台是否可见。这个值探测不到时是 -1，
 	// 含义是「还不知道」——前端据此留空而不是当成 0 把平台藏掉。
 	AccountCount int `json:"account_count"`
@@ -480,7 +480,7 @@ func displayModel(m config.ChannelModel) config.ChannelModel {
 // /admin/api 且签名完全不同），而渠道配置里连创建时用的模板都可能没记。
 // 与其猜名字，不如直接问「集成面板要用的那个接口在不在」。
 func (c *Channel) ProbeConsole() {
-	// 判据是「由 ModelMux 提供、自带管理面」而不是「是子进程」：原生型跑在
+	// 判据是「由 Mergence 提供、自带管理面」而不是「是子进程」：原生型跑在
 	// 本进程内，但它同样有 /panel/api/*，同样需要被探出 ConsoleGateway。
 	if !c.up.Source.Hosted() {
 		return

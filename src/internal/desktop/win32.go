@@ -32,12 +32,6 @@ func lookupWnd(hwnd uintptr) any {
 	return v
 }
 
-func unregisterWnd(hwnd uintptr) {
-	if hwnd != 0 {
-		wndRegistry.Delete(hwnd)
-	}
-}
-
 var (
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")

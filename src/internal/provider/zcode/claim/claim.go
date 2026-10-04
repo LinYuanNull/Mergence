@@ -32,8 +32,8 @@ package claim
 import (
 	"errors"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
 )
 
 // ErrUpstreamUnavailable 表示领取需要上游调用（+ 验证码求解），本阶段未实现。

@@ -4,7 +4,7 @@ package upstream
 import (
 	"net/http"
 
-	"modelmux/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/auth"
 )
 
 const clientUA = "Trae/" + IdeVersion

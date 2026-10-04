@@ -5,7 +5,7 @@
 ##判据为什么是「通知数据库」
 
 气泡/横幅由**另一个进程**（ShellExperienceHost / ActionCenter）在系统层面弹出，
-ModelMux 自己不打任何日志，所以读日志、抓进程都判不出来。
+Mergence 自己不打任何日志，所以读日志、抓进程都判不出来。
 
 试过枚举通知窗口（类名 NotifyIconView / ToastWindow 等），**抓不到**——实测
 气泡不一定会以可见顶层窗口出现（本机 EnableAutoTray=0 时根本不显示）。
@@ -18,7 +18,7 @@ ModelMux 自己不打任何日志，所以读日志、抓进程都判不出来�
 这个判据是**被对照实验验证过的**：另写一个只发NIF_INFO、不做任何别的
 探针程序跑一次，行数必然 +1（13 -> 14），且 Shell_NotifyIconW 返回 1。
 也就是说「模型弹了气泡 -> 这里 +1」这条因果链是确凿的；
-而 ModelMux 最小化后 +0，就是真的没有。
+而 Mergence 最小化后 +0，就是真的没有。
 
 注意：这**不依赖气泡是否可见**。系统通知即使被静音、不显示，
 投递记录依然入库 —— 这正是我们要的：我们禁止的是「发出通知」这个行为本身。
@@ -67,7 +67,22 @@ def notif_count():
 
 
 def app_pid():
-    """ToolHelp32 快照找 ModelMux.exe 的 PID（理由见文件头）。"""
+    """ToolHelp32 快照找 Mergence.exe 的 PID（理由见文件头）。
+
+    可用 `MERGENCE_PID` 显式指定目标进程。为什么需要这个开关：
+    本套件**不自己起实例**，靠快照取「第一个 Mergence.exe」——机器上完全可能
+    同时跑着用户自己的实例（单实例互斥体只防**同一安装目录**重复启动，不同
+    目录各跑各的），此时取到的可能是**别人的进程**：轻则「找不到主窗口」，
+    重则把用户的窗口最小化/隐藏到托盘（本套件真的会 ShowWindow/PostMessage）。
+    所以需要一个能锁定目标的入口，让调用方明确「测哪个 PID」。
+    """
+    pinned = os.environ.get("MERGENCE_PID", "").strip()
+    if pinned:
+        try:
+            return int(pinned)
+        except ValueError:
+            print("      MERGENCE_PID 不是整数，忽略：%r" % pinned)
+
     class PROCESSENTRY32(ctypes.Structure):
         _fields_ = [
             ("dwSize", wt.DWORD), ("cntUsage", wt.DWORD),
@@ -85,7 +100,7 @@ def app_pid():
     found = 0
     if kernel32.Process32FirstW(snap, ctypes.byref(pe)):
         while True:
-            if pe.szExeFile.lower() == "modelmux.exe":
+            if pe.szExeFile.lower() == "mergence.exe":
                 found = pe.th32ProcessID
                 break
             if not kernel32.Process32NextW(snap, ctypes.byref(pe)):
@@ -95,7 +110,7 @@ def app_pid():
 
 
 def main_window(target_pid):
-    """按「标题 == ModelMux」找主窗口。
+    """按「标题 == Mergence」找主窗口。
 
     不按类名找：go-webview2 注册的类名是 `webview`（不是 Chrome_WidgetWin_*），
     而且同一进程里还有 IME 之类的辅助窗口，按标题更准。
@@ -108,7 +123,7 @@ def main_window(target_pid):
         if pid.value == target_pid:
             buf = ctypes.create_unicode_buffer(256)
             user32.GetWindowTextW(hwnd, buf, 256)
-            if buf.value == "ModelMux":
+            if buf.value == "Mergence":
                 hits.append(hwnd)
         return True
 
@@ -120,7 +135,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
 
     pid = app_pid()
-    ok("ModelMux 正在运行", pid, "pid=%d" % pid)
+    ok("Mergence 正在运行", pid, "pid=%d" % pid)
     if not pid:
         return 1
 
@@ -143,7 +158,7 @@ def main():
     n1 = notif_count()
     ok("最小化不产生任何通知", n1 == base, "before=%d after=%d" % (base, n1))
 
-    # 2) 隐藏到托盘 —— 旧实现在这里弹「ModelMux仍在后台运行」气泡
+    # 2) 隐藏到托盘 —— 旧实现在这里弹「Mergence仍在后台运行」气泡
     #用 WM_CLOSE 而不是 SW_HIDE：只有 WM_CLOSE 才会走我们自己的
     # HideToTray()（子类化窗口过程拦截），SW_HIDE 是绕过业务代码的裸调用。
     user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)

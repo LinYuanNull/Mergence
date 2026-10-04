@@ -4,15 +4,15 @@
 //
 //  1. 「面板里再开面板」：以前管理 WorkBuddy 账号要跳转到 wb2api 自己的面板——
 //     两套 UI、两个地址。现在管理请求统一走本代理，账号列表/启停/签到直接
-//     呈现在 ModelMux 主窗口里。
-//  2. 「打开账号池要输密钥」：渠道的 api_key 由 ModelMux 服务端持有，
+//     呈现在 Mergence 主窗口里。
+//  2. 「打开账号池要输密钥」：渠道的 api_key 由 Mergence 服务端持有，
 //     代理转发时注入 Authorization。浏览器从头到尾不接触上游密钥。
 //
 // 边界：只代理「托管型且已就绪」的渠道；这是管理通道不是通用代理——
 // 上游地址由服务端配置决定，客户端无法用它访问任意主机。
 //
 // 方法覆盖：GET/POST/PUT/DELETE 一律透传。写操作曾经被禁（zcode 只放 GET），
-// 那是「账号面板留在网关自己的 UI 里」时代的口径；面板整块搬进 ModelMux 后
+// 那是「账号面板留在网关自己的 UI 里」时代的口径；面板整块搬进 Mergence 后
 // 已撤掉，理由见 handleChannelUpstream 里的注释。
 package web
 
@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/provider"
+	"mergence/internal/provider"
 )
 
 // upstreamProxyTimeout 只读管理请求的上限。
@@ -105,7 +105,7 @@ func (s *Server) handleChannelUpstream(w http.ResponseWriter, r *http.Request) {
 	// zcode 的管理代理 GET/POST/PUT/DELETE 全开放。
 	//
 	// 历史上这里只放 GET，理由是「写操作留在网关自己的面板里」。但账号面板
-	// 整块搬进 ModelMux 之后，那个口径就成了半成品：面板上有按钮、点下去 405。
+	// 整块搬进 Mergence 之后，那个口径就成了半成品：面板上有按钮、点下去 405。
 	// 所以按需求撤掉这道限制。
 	//
 	// 安全性没有靠「只读」来兜底，靠的是另外两条一直没变的前提：
@@ -246,7 +246,7 @@ func panelAPIPrefixFor(kind, configured string) string {
 //     （原生装配层把同一个值同时注入管理面与账号库 meta，见 native/zcode 的
 //     「密码合并」）。空 route key 回落契约默认值 `zcode`。
 //   - **托管型子进程**（SourceManaged，老配置里 python cli.py serve 那套）：
-//     认的是它自己的 `ZCODE_ADMIN_KEY`（ModelMux 侧存在 config.Claim.AdminKey），
+//     认的是它自己的 `ZCODE_ADMIN_KEY`（Mergence 侧存在 config.Claim.AdminKey），
 //     route key 是转发通道的凭据，拿它去管理面会 401。老渠道的用户还没迁移，
 //     这条不能砍。
 //

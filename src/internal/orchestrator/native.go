@@ -28,8 +28,8 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/native"
+	"mergence/internal/config"
+	"mergence/internal/native"
 )
 
 // nativeStopGrace 优雅停机的上限。
@@ -96,16 +96,6 @@ func (h *nativeHandle) Close() error {
 		err = h.stop()
 	})
 	return err
-}
-
-// Wait 等 Serve 循环退出（Close 之后用）。
-func (h *nativeHandle) Wait(ctx context.Context) error {
-	select {
-	case <-h.done:
-		return h.exitErr
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 // startNative 启动一个原生型 provider，并等它就绪。

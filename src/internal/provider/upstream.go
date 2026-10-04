@@ -2,16 +2,16 @@
 //
 // 三种来源在这里归一成同一个形状：
 //
-//	内嵌型 embedded —— ModelMux 进程内直连一个 OpenAI 兼容端点（纯转发）
-//	托管型 managed  —— ModelMux 拉起的独立子进程
-//	原生型 native   —— ModelMux 在本进程内装配上游实现并服务（见 internal/native）
+//	内嵌型 embedded —— Mergence 进程内直连一个 OpenAI 兼容端点（纯转发）
+//	托管型 managed  —— Mergence 拉起的独立子进程
+//	原生型 native   —— Mergence 在本进程内装配上游实现并服务（见 internal/native）
 //
 // 后两者都跑在本机回环上、都自带管理面，只差「谁提供服务」——那是编排层的事，
 // 到了这一层已经看不出区别（见 Source.Hosted）。于是路由、多 Key 池、协议适配、
 // 模型聚合、连接测试、额度查询全都只有一份实现。
 //
 // 这是「不让 WorkBuddy / new-api 的源码被改写成库」的前提：它们本来就是独立可用的
-// OpenAI 兼容服务，ModelMux 只需要知道「叫什么、前缀是什么、怎么鉴权」。
+// OpenAI 兼容服务，Mergence 只需要知道「叫什么、前缀是什么、怎么鉴权」。
 package provider
 
 import (
@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // defaultModelsPath 模型列表路径（相对 API 前缀）。
@@ -35,11 +35,11 @@ const defaultAPIPrefix = "/v1"
 type Source string
 
 const (
-	// SourceEmbedded 内嵌型：ModelMux 直接向上游发请求。
+	// SourceEmbedded 内嵌型：Mergence 直接向上游发请求。
 	SourceEmbedded Source = "embedded"
-	// SourceManaged 托管型：上游是 ModelMux 拉起的独立子进程。
+	// SourceManaged 托管型：上游是 Mergence 拉起的独立子进程。
 	SourceManaged Source = "managed"
-	// SourceNative 原生型：上游由 ModelMux **在本进程内**装配并服务。
+	// SourceNative 原生型：上游由 Mergence **在本进程内**装配并服务。
 	//
 	// 对外它仍然是一个回环 HTTP 端点（见 internal/native），所以与托管型相比
 	// 只差「谁提供服务」这一件事，而这件事完全由编排层吸收：两者都给得出
@@ -48,7 +48,7 @@ const (
 	SourceNative Source = "native"
 )
 
-// Hosted 该来源是否由 ModelMux 提供、跑在本机回环上、且自带管理面。
+// Hosted 该来源是否由 Mergence 提供、跑在本机回环上、且自带管理面。
 //
 // 托管型（子进程）与原生型（进程内）都满足；内嵌型只是通用 HTTP 转发，
 // 没有独立的管理 API，也没法在服务端注入凭据。
@@ -60,7 +60,7 @@ func (s Source) Hosted() bool { return s == SourceManaged || s == SourceNative }
 
 // Family 把来源归一成**对外的**两类：内嵌型 / 托管型。
 //
-// 为什么对外只认两类：面板与客户端真正要判的是「这是 ModelMux 托管的一个平台
+// 为什么对外只认两类：面板与客户端真正要判的是「这是 Mergence 托管的一个平台
 // （积分型、账号在控制台里管），还是用户自己填的一个 API 端点」，而**不是**
 // 「上游跑在子进程里还是本进程里」——后者是实现细节，连渠道配置都能在两种形态
 // 之间切换而其余字段一个不动。

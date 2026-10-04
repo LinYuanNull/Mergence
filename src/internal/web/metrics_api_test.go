@@ -2,7 +2,7 @@
 //
 // 重点：各种「拿不到数据」的情况必须各自可区分。
 // 把它们混成一种（都显示 0 或都显示「失败」）会让用户
-// 误判问题出在 ModelMux 上，而实际上可能是子进程没起、
+// 误判问题出在 Mergence 上，而实际上可能是子进程没起、
 // 上游没这个接口、或者真的就是还没有用量。
 package web
 
@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/metrics"
-	"modelmux/internal/orchestrator"
-	"modelmux/internal/provider"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/metrics"
+	"mergence/internal/orchestrator"
+	"mergence/internal/provider"
 )
 
 func TestParseUpstreamUsageStructured(t *testing.T) {
@@ -230,7 +230,7 @@ func newTestMetricsServer(t *testing.T) *Server {
 	t.Cleanup(func() { _ = lg.Close() })
 	home := t.TempDir()
 	s := New(lg, orchestrator.New(t.TempDir(), lg, nil), provider.NewRegistry(lg), home)
-	s.SetConfig(config.Default(), filepath.Join(home, "modelmux.json"))
+	s.SetConfig(config.Default(), filepath.Join(home, "mergence.json"))
 	t.Cleanup(func() { _ = s.store.Close() })
 	return s
 }

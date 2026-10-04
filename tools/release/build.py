@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""构建 ModelMux.exe：同步前端资源 -> 编译。
+"""构建 Mergence.exe：同步前端资源 -> 编译。
 
 **为什么需要这个脚本**：前端真源在仓库根的 `web/`，但 `go:embed`
 不允许 `..`，所以编译器只能读 `src/internal/assets/` 里的副本。
@@ -10,7 +10,7 @@
     python tools/release/build.py --check     # 只校验两边是否一致
     python tools/release/build.py --no-build  # 只同步，不编译
 
-go 可执行文件按 `GO` / `MODELMUX_GO` 环境变量 -> PATH -> GOROOT ->
+go 可执行文件按 `GO` / `MERGENCE_GO` 环境变量 -> PATH -> GOROOT ->
 常见安装位置 的顺序查找，不写死本机路径。
 """
 import hashlib
@@ -21,13 +21,13 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 本脚本在 tools/release/ 下，仓库根是 HERE 的上两级。
-ROOT = os.path.abspath(os.environ.get("MODELMUX_SRC")
+ROOT = os.path.abspath(os.environ.get("MERGENCE_SRC")
                        or os.path.dirname(os.path.dirname(HERE)))
 
 WEB = os.path.join(ROOT, "web")
 EMBED = os.path.join(ROOT, "src", "internal", "assets")
 SRC = os.path.join(ROOT, "src")
-OUT = os.path.join(ROOT, "ModelMux.exe")
+OUT = os.path.join(ROOT, "Mergence.exe")
 
 # 前端资源清单：两边必须同名同内容。
 ASSETS = ["index.html", "theme.js", "app.js", "upstream.js",
@@ -35,7 +35,7 @@ ASSETS = ["index.html", "theme.js", "app.js", "upstream.js",
 
 
 def find_go():
-    for var in ("GO", "MODELMUX_GO"):
+    for var in ("GO", "MERGENCE_GO"):
         p = os.environ.get(var)
         if p and os.path.isfile(p):
             return p

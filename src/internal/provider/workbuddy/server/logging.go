@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/logfmt"
-	"modelmux/internal/provider/workbuddy/pool"
-	"modelmux/internal/provider/workbuddy/reqlog"
-	"modelmux/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/logfmt"
+	"mergence/internal/provider/workbuddy/pool"
+	"mergence/internal/provider/workbuddy/reqlog"
+	"mergence/internal/provider/workbuddy/upstream"
 )
 
 // maxUserAgentLen 归档与面板展示保留的 UA 字节上限。UA 是客户端完全可控的

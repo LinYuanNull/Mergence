@@ -25,7 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"modelmux/internal/provider/zcode/httpx"
+	"mergence/internal/provider/zcode/httpx"
 )
 
 // Handler 是面板宿主。

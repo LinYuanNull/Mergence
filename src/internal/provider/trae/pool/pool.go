@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/auth"
 )
 
 // CoolKind 冷却类型。

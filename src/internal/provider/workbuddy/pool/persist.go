@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 var flushInterval = 5 * time.Second

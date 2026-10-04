@@ -1,14 +1,14 @@
-# ModelMux 完整设计方案
+# Mergence 完整设计方案
 
 > 多家 API 聚合网关 · 桌面应用 · 开源项目
 > 版本：v0.8 · 日期：2026-10-02（P0–P4 已实现；面板整合与桌面化改造已完成，
-> 详见《ModelMux-面板整合与桌面化.md》）
+> 详见《Mergence-面板整合与桌面化.md》）
 
 ## 面板整合与桌面化（2026-10-02，已落地）
 
 - **功能补全**：原 WorkBuddy 面板 35 条 API 全部可用（改造前只覆盖 6 条），
   经 `/api/channels/{name}/upstream/*` 代理转发，密钥服务端注入。
-  对照表见《ModelMux-面板整合与桌面化.md》§1。
+  对照表见《Mergence-面板整合与桌面化.md》§1。
 - **桌面化**：侧栏 slot 导航（无 hash/history）、集中 Store、go:embed 本地资源、
   原生桥 `mmShowWindow` / `mmOpenExternal`（go-webview2 Bind）。
   架构参照本机 DeepSeek Harness（Electron + Cordis + panel/slot + preload 桥）。
@@ -35,11 +35,11 @@
 | 底座选型 | 路线 B：`new-api` 承担渠道路由 / 模型别名 / 计费统计 |
 | 不回退项 | `--no-sandbox`、CRLF+GBK 批处理、单 `.rsrc` 段、DPI 换算 |
 
-**一条决定全局形态的硬约束**：所有反向 2api 项目（含 `new-api`）都是**独立 HTTP 服务**，不是可 import 的库。因此 provider 层的唯一正确形态是 **「子进程托管 + HTTP 转发」**，ModelMux 自身不承载路由逻辑。
+**一条决定全局形态的硬约束**：所有反向 2api 项目（含 `new-api`）都是**独立 HTTP 服务**，不是可 import 的库。因此 provider 层的唯一正确形态是 **「子进程托管 + HTTP 转发」**，Mergence 自身不承载路由逻辑。
 
 ### License 策略（已定：MIT）
 
-ModelMux 本体采用 **MIT**。之所以成立，是因为架构上刻意做了两件事：
+Mergence 本体采用 **MIT**。之所以成立，是因为架构上刻意做了两件事：
 
 1. **不 import 任何 AGPL 代码**——`new-api` 只以独立进程运行，不构成衍生作品。
 2. **不随包分发第三方二进制**——规避 AGPL「提供对应源码」的分发义务。
@@ -60,12 +60,12 @@ ModelMux 本体采用 **MIT**。之所以成立，是因为架构上刻意做了
 
 ### 与 new-api 的职责边界
 ```
-ModelMux 总面板 ──Admin API──▶ new-api（无头运行，自带面板关闭）
+Mergence 总面板 ──Admin API──▶ new-api（无头运行，自带面板关闭）
       │                              │
       │                              ├─ 渠道路由 / 权重 / 故障转移
       └── 直连各 provider 管理接口 ───┴─ 模型别名 / 用量计费
 ```
-- 面板只认 **ModelMux 自己的鉴权**，用户永远只登录一次。
+- 面板只认 **Mergence 自己的鉴权**，用户永远只登录一次。
 - new-api 的 Web 面板在配置里关闭，避免暴露第二个入口。
 
 ### 总面板信息架构（5 个一级页签）
@@ -168,11 +168,11 @@ WorkBuddy 是**按模型计费**的（每个模型有独立倍率、tier、可�
 
 ### 用途
 
-把**任意 OpenAI 兼容端点**接入 ModelMux，**无需为每个小众 provider 写适配器**。解决三类现实需求：
+把**任意 OpenAI 兼容端点**接入 Mergence，**无需为每个小众 provider 写适配器**。解决三类现实需求：
 
 1. **官方 API 直连**：智谱 BigModel、DeepSeek、SiliconFlow、Moonshot 等本来就提供 OpenAI 兼容端点，没有理由再包一层 2api 项目。
 2. **自建/私有部署**：本地 `vLLM` / `Ollama` / LM Studio、公司内部网关。
-3. **长尾与新项目**：未来新出现的 2api 项目、小众中转站——不必等 ModelMux 发版适配。
+3. **长尾与新项目**：未来新出现的 2api 项目、小众中转站——不必等 Mergence 发版适配。
 
 **同时它是 OpenRouter 的归宿**：OpenRouter 本身就是 OpenAI 兼容端点，不需要专门的代码路径，只需一个**预设模板**。
 
@@ -224,7 +224,7 @@ WorkBuddy 是**按模型计费**的（每个模型有独立倍率、tier、可�
 
 | 类别 | 运行方式 | 成员 |
 |---|---|---|
-| **内嵌型** | ModelMux 进程内直接实现 OpenAI 兼容端点 | `WorkBuddy`（搬迁进来）、`自定义渠道` |
+| **内嵌型** | Mergence 进程内直接实现 OpenAI 兼容端点 | `WorkBuddy`（搬迁进来）、`自定义渠道` |
 | **托管型** | 独立子进程，编排器负责拉起/健康检查/日志归一 | `new-api`、`zcode2api`、`trae-local-api` |
 
 **OpenRouter 不再是独立成员**，而是内嵌型的一个预设模板。
@@ -317,7 +317,7 @@ go-webview2 的窗口过程收到 `WM_CLOSE` 时**直接 `DestroyWindow`**，不
 
 **(6) 单实例（顺带解决一个体验问题）**
 
-用命名互斥体 `CreateMutexW("Global\\ModelMux.SingleInstance")` 保证单实例；第二次启动**不再开新进程**，而是找到已有窗口并**唤出**它（`ShowWindow(SW_RESTORE)` + `SetForegroundWindow`）。
+用命名互斥体 `CreateMutexW("Global\\Mergence.SingleInstance")` 保证单实例；第二次启动**不再开新进程**，而是找到已有窗口并**唤出**它（`ShowWindow(SW_RESTORE)` + `SetForegroundWindow`）。
 
 > 现实中用户会反复双击快捷方式；没有单实例会出现多个进程抢同一批端口、状态互相覆盖。
 
@@ -327,7 +327,7 @@ go-webview2 的窗口过程收到 `WM_CLOSE` 时**直接 `DestroyWindow`**，不
 |---|---|
 | 左键单击 / 双击 | 唤出主窗口 |
 | 右键 | 弹出菜单 |
-| 首次关窗 | 弹一次气泡：「ModelMux 仍在后台运行，双击托盘图标可恢复」+ 可选「不再提示」 |
+| 首次关窗 | 弹一次气泡：「Mergence 仍在后台运行，双击托盘图标可恢复」+ 可选「不再提示」 |
 
 **右键菜单**
 ```
@@ -356,14 +356,14 @@ go-webview2 的窗口过程收到 `WM_CLOSE` 时**直接 `DestroyWindow`**，不
 
 | 产物 | 说明 |
 |---|---|
-| `ModelMux.exe` | Windows x64 **单文件**（壳 + 总面板 + 全部内嵌型 provider），约 7–10 MB |
+| `Mergence.exe` | Windows x64 **单文件**（壳 + 总面板 + 全部内嵌型 provider），约 7–10 MB |
 | `checksums.txt` | 各产物 SHA256 |
 | 源码包 | GitHub 自动提供 |
 
 **托管型 provider 不进包**：由用户在「渠道」页点「添加」时按需获取，落到
 `<数据根>\data\providers\<name>\<version>\`
 
-> `<数据根>` 默认就是 exe 所在目录（便携形态），不可写时回落到 `%LOCALAPPDATA%\ModelMux`。
+> `<数据根>` 默认就是 exe 所在目录（便携形态），不可写时回落到 `%LOCALAPPDATA%\Mergence`。
 > 见 README「运行与配置」。
 
 下载前**必须展示来源 URL 与 SHA256**，并允许改为手动指定本地路径。
@@ -372,7 +372,7 @@ go-webview2 的窗口过程收到 `WM_CLOSE` 时**直接 `DestroyWindow`**，不
 
 1. **License 干净**（最关键）：不打包 AGPL 二进制 → 不触发「提供对应源码」义务 → 本体可保持 MIT。
 2. **体积与版本自由度**：单文件 ~10 MB vs 打包全部后的 100 MB+；`new-api` 仍在发 rc，按需拉取不会把版本钉死。
-3. **可换可替**：托管型 provider 都是独立进程，用户可换成自己的 fork 而不动 ModelMux。
+3. **可换可替**：托管型 provider 都是独立进程，用户可换成自己的 fork 而不动 Mergence。
 
 > ⚠️ **风险提示**：「一键下载」在部分司法辖区可能被视为协助分发。做法上把下载做成**用户显式主动触发**（展示来源与校验值），而非静默预装；并保留「仅手动指定本地路径」开关。
 
@@ -380,7 +380,7 @@ go-webview2 的窗口过程收到 `WM_CLOSE` 时**直接 `DestroyWindow`**，不
 
 ## 6. 端口策略：动态分配
 
-### 决定：ModelMux 统一分配 + 持久化复用 + 面板明示
+### 决定：Mergence 统一分配 + 持久化复用 + 面板明示
 
 **为什么不用纯 OS 自动分配**：托管型 provider 基本不接受 `:0`，且用户需要知道端口才能填客户端 base_url。所以是「编排器选端口 → 传给子进程 → 面板显示」。**内嵌型 provider 无此问题，直接用 `:0`。**
 
@@ -388,7 +388,7 @@ go-webview2 的窗口过程收到 `WM_CLOSE` 时**直接 `DestroyWindow`**，不
 
 1. **分配** —— 启动托管 provider 前，用 `net.Listen("tcp","127.0.0.1:0")` 探空闲端口后立即释放。
 2. **传递** —— 双通道下发，兼容不同 provider 的配置习惯：
-   - 我们的约定：`MODELMUX_PORT=<port>`
+   - 我们的约定：`MERGENCE_PORT=<port>`
    - provider 原生变量：如 `new-api` / `trae-local-api` 的 `PORT`
    - 不支持改端口的（如 `glm-zcode-2api` **硬编码 7864**）→ 走降级模式：**固定端口 + 冲突预检**，冲突则明确报错而非静默失败。
 3. **确认** —— 轮询 `127.0.0.1:<port>/healthz` 直到就绪或超时。
@@ -551,22 +551,22 @@ availability[account][model] = {
 - **现有插件参照**：`@linxin666/dsh-usage`（用量面板，当前 `enabled: false`）、`dsh-cost-meter`（成本账本）、`@linxin666/dsh-pet`（UI 小部件）、`dshmarket`（插件市场）。
 - **provider 机制**：`@deepseek-ai/dsh-llm-*` 系列，形如 `dsh-llm-deepseek-account`、`dsh-llm-deepseek-api-key`，在配置里声明 `models` 列表。
 - **已有额度基础设施**：`~/.dsh/dsh-usage/provider-snapshots.json`（provider 额度快照）+ `~/.dsh/storages/cost-meter/ledger.json`（成本账本）。
-- **dsh 内置 provider 清单**与 ModelMux 高度重合：`zai`、`zai-coding-cn`、`openrouter`、`moonshotai`、`minimax`、`kimi-coding`、`deepseek-official`、`openai-codex`、`opencode-go`。
+- **dsh 内置 provider 清单**与 Mergence 高度重合：`zai`、`zai-coding-cn`、`openrouter`、`moonshotai`、`minimax`、`kimi-coding`、`deepseek-official`、`openai-codex`、`opencode-go`。
 
 > 注意：`provider-snapshots.json` 里这些 provider 的 `credential` 均为 `none`，即**未配凭证所以取不到额度数值**——这正是插件要补的位置。
 
-### 插件形态：一个 Cordis 插件包 `dsh-modelmux`
+### 插件形态：一个 Cordis 插件包 `dsh-mergence`
 
 包含两部分能力：
 
-**① provider 注册** —— 把 ModelMux 注册为 dsh 的 LLM provider
-- `base_url`：ModelMux 的动态端口（插件启动时读 ModelMux 的 `ports.json`，或调用其本地发现接口）
+**① provider 注册** —— 把 Mergence 注册为 dsh 的 LLM provider
+- `base_url`：Mergence 的动态端口（插件启动时读 Mergence 的 `ports.json`，或调用其本地发现接口）
 - 模型列表：`GET /v1/models` 拉取，带 `provider/` 前缀
-- 效果：**dsh 里可直接把 ModelMux 的任意模型设为对话模型**——一次配置用到所有渠道
+- 效果：**dsh 里可直接把 Mergence 的任意模型设为对话模型**——一次配置用到所有渠道
 
-**② 额度组件** —— 显示 ModelMux 上各家模型的剩余额度
+**② 额度组件** —— 显示 Mergence 上各家模型的剩余额度
 
-### 数据来源：ModelMux 新增一个插件端点
+### 数据来源：Mergence 新增一个插件端点
 
 ```
 GET /api/quota
@@ -596,7 +596,7 @@ GET /api/quota
 | 级 | 依据 | 可信度 |
 |---|---|---|
 | 1 | **上游明确标记**：额度接口返回 `unlimited: true` 或单价为 0 | 最高 |
-| 2 | **ModelMux 倍率表**：该模型在所有来源上的 `ModelRate` 均为 0，或 `costTier == 0`（免费档） | 高 |
+| 2 | **Mergence 倍率表**：该模型在所有来源上的 `ModelRate` 均为 0，或 `costTier == 0`（免费档） | 高 |
 | 3 | 不可判定 → **不猜**，显示「—」并归入「未知」 | — |
 
 > **第 3 级刻意保守**：误判免费会让用户以为可以随便用、实际产生费用，**比显示「未知」的代价大得多**。
@@ -622,12 +622,12 @@ GET /api/quota
 - 默认按厂商折叠，记住展开状态
 - 点击模型 → 展开该模型的各来源渠道明细（对应总面板的抽屉）
 - 30 秒自动刷新，支持手动刷新
-- ModelMux 未运行时显示明确的「**未连接**」，而不是空白或 0
+- Mergence 未运行时显示明确的「**未连接**」，而不是空白或 0
 
 ### 实现顺序：排在最后（P9）
 
 三个理由：
-1. **完全依赖** ModelMux 的两个产出——`/api/quota` 端点与端口发现机制。主体没完成，插件无从对接。
+1. **完全依赖** Mergence 的两个产出——`/api/quota` 端点与端口发现机制。主体没完成，插件无从对接。
 2. 它是**可独立开发的纯前端 + 轻适配**工作，不阻塞主体任何阶段。
 3. 主体完成后，`/api/quota` 的数据结构已经过总面板**实战验证**，插件照抄即可，**返工风险最低**。
 
@@ -637,7 +637,7 @@ GET /api/quota
 
 | 阶段 | 内容 | 可验收标准 | 现状核实（2026-10-03） |
 |---|---|---|---|
-| **P0 骨架** | 新建 `modelmux/` 模块；进程编排器（动态端口、健康检查、退出清理、日志归一、`ports.json`） | 能拉起/关闭一个假 provider，端口动态分配且持久化复用 | ✅ **已完成** |
+| **P0 骨架** | 新建 `mergence/` 模块；进程编排器（动态端口、健康检查、退出清理、日志归一、`ports.json`） | 能拉起/关闭一个假 provider，端口动态分配且持久化复用 | ✅ **已完成** |
 | **P1 托盘与生命周期** ⭐ | 窗口子类化拦截 `WM_CLOSE`；Win32 托盘（含 `TaskbarCreated` 重建）；有序退出时序；单实例唤出 | 关窗后进程仍在、托盘图标在；右键「退出」后**进程与所有子进程全部消失、端口全释放、通知区无残留图标**；杀掉 explorer 重启后图标自动恢复 | ✅ **已完成**（`test/gui_check.py` 9 项 + `test/verify_silent_minimize.py` 8 项） |
 | **P2 日志基建** ⭐ | `log/slog` 结构化双通道 + `req_id` 贯穿；面板日志页改为表格 + 链路抽屉 | 4 路日志汇流后每条都能看出处；按 req_id 能串完整链路 | ✅ **已完成** |
 | **P3 自定义渠道** ✅ | 内嵌型 provider 框架（三条协议路径、多 Key 池、模型拉取）+ 添加表单 + 测试连接 + 预设模板 + 无界面模式 | **已完成**：37 项端到端断言全通过；chat 保真直通（含流式）、Anthropic 双向转换（含流式与 tool_calls）；`responses` 明确报 501 | ✅ **已完成** |
@@ -646,8 +646,8 @@ GET /api/quota
 | **P5 WorkBuddy 搬迁** | `pool` / `scheduler` / `session` / `upstream` 搬入 `internal/provider/workbuddy`；旧配置自动迁移 | 旧 `config.json` 能被识别迁移，行为不回退 | ✅ **已完成**（由 Track 1 收口，另引入 `internal/native/` 与 `SourceNative`） |
 | **P6 额度合集** | `quota_matrix` 聚合端点 + 折叠合集 + 双列表视图 + 下钻 | 两个列表都能一眼回答「还能用哪个模型」 | ⏳ **未做** |
 | **P7 额度轮询与自动 ban** | `账号×模型` 可用性矩阵；被动优先探测；定时任务；路由过滤；解 ban 与试探 | 额度耗尽的模型自动退出路由；查询接口挂掉时**不误 ban**；恢复后自动回归 | ⏳ **未做** |
-| **P8 打包交付** | 单文件 `ModelMux.exe`；Release 三件套；托管型 provider 按需拉取 UI；`/api/quota` 端点定型 | 新机器双击即用，渠道页能一键添加 provider | ◐ **部分未做**（见 §10.1） |
-| **P9 dsh 插件** ⏳ | Cordis 插件包 `dsh-modelmux`：provider 注册 + 额度组件 + 免费判定 | 在 dsh 里能看到 ModelMux 各家模型额度，免费模型只显示「免费」 | ⏳ **未做** |
+| **P8 打包交付** | 单文件 `Mergence.exe`；Release 三件套；托管型 provider 按需拉取 UI；`/api/quota` 端点定型 | 新机器双击即用，渠道页能一键添加 provider | ◐ **部分未做**（见 §10.1） |
+| **P9 dsh 插件** ⏳ | Cordis 插件包 `dsh-mergence`：provider 注册 + 额度组件 + 免费判定 | 在 dsh 里能看到 Mergence 各家模型额度，免费模型只显示「免费」 | ⏳ **未做** |
 
 **建议顺序说明**：
 - **P1 提前到最前**：它改变了「进程何时结束」这个**所有测试都要依赖的前提**——如果留到最后做，前面所有阶段的验收方式都要返工。
@@ -679,7 +679,7 @@ GET /api/quota
   - 另注：本阶段在 `docs/zcode-native-port-plan.md` §2.1 已被**降级为「待决策」**——new-api 现定为唯一有意保留的子进程例外，是否继续做自动建渠道需先决策。
 
 - **P8（部分）**
-  - 单文件 `ModelMux.exe`：**有** —— `tools/release/build.py` 产出约 12.5 MB 单文件（`-trimpath -ldflags=-s -w -H windowsgui`）。
+  - 单文件 `Mergence.exe`：**有** —— `tools/release/build.py` 产出约 12.5 MB 单文件（`-trimpath -ldflags=-s -w -H windowsgui`）。
   - Release 三件套：**有** —— 公开仓库已发 `v0.1.0` / `v0.2.1`。
   - 托管型 provider 按需拉取 UI：**无** —— 面板渠道页目前只有「预设模板 + 手填路径」，没有「一键拉取 provider」。
   - `/api/quota` 端点定型：**无** —— 见 P6。
@@ -690,7 +690,7 @@ GET /api/quota
 - **P7**：全仓**无** `ban_failure_threshold`、**无**自动 ban / 解 ban 逻辑；「查询失败不误 ban」这条风险缓解措施**尚未落地**。
 - **P9**：无 dsh 插件包。
 
-**结论**：ModelMux 本体停在「**P0–P5 完成、P4.5 / P8 部分**」的位置；**P6 / P7 / P9 整块未启动**。若继续本体，入口是 **P6（额度合集）**——它同时是 P7（自动 ban）与 P8（`/api/quota` 定型）的前置，也是 P9（dsh 插件）的硬依赖。
+**结论**：Mergence 本体停在「**P0–P5 完成、P4.5 / P8 部分**」的位置；**P6 / P7 / P9 整块未启动**。若继续本体，入口是 **P6（额度合集）**——它同时是 P7（自动 ban）与 P8（`/api/quota` 定型）的前置，也是 P9（dsh 插件）的硬依赖。
 
 ---
 
@@ -711,7 +711,7 @@ GET /api/quota
 | 额度查询接口自身故障 | **所有模型被误 ban，服务不可用** | 连续失败 `ban_failure_threshold` 次后转「未知」而**非**「耗尽」；绝不因查询失败而 ban |
 | 主动轮询打上游过频被限流 | 影响正常调用 | 被动优先；查询错峰；结果带 TTL 缓存 |
 | 免费模型误判 | 用户以为可随便用，实际产生费用 | 三级判定从严；不可判定一律显示「—」，**绝不默认免费** |
-| dsh 插件与 dsh 版本耦合（Cordis 插件 API 可能变） | P9 需适配 | 插件只依赖 ModelMux 的稳定 HTTP 端点，对 dsh 侧只做薄适配；锁 dsh 版本 |
+| dsh 插件与 dsh 版本耦合（Cordis 插件 API 可能变） | P9 需适配 | 插件只依赖 Mergence 的稳定 HTTP 端点，对 dsh 侧只做薄适配；锁 dsh 版本 |
 
 ---
 

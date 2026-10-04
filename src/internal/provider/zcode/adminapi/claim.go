@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"modelmux/internal/provider/zcode/captcha"
-	"modelmux/internal/provider/zcode/claim"
-	"modelmux/internal/provider/zcode/httpx"
+	"mergence/internal/provider/zcode/captcha"
+	"mergence/internal/provider/zcode/claim"
+	"mergence/internal/provider/zcode/httpx"
 )
 
 // ── GET /admin/api/claim/preview ────────────────────────────

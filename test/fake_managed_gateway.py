@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """假托管上游：模拟一个「独立进程型的 2api 网关」。
 
-用来验证 ModelMux 的托管型渠道链路，不依赖任何真实上游：
+用来验证 Mergence 的托管型渠道链路，不依赖任何真实上游：
   - 端口从环境变量 PORT 取（验证 PortEnvVar 下发能否生效）
   - /healthz 供就绪探测
   - /models 与 /chat/completions 需要 Bearer 1234（验证路由侧 Key 注入）
@@ -13,7 +13,7 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PORT = int(os.environ.get("PORT") or os.environ.get("MODELMUX_PORT") or 18095)
+PORT = int(os.environ.get("PORT") or os.environ.get("MERGENCE_PORT") or 18095)
 TOKEN = "1234"
 MODELS = ["wb-alpha", "wb-beta"]
 
@@ -98,7 +98,7 @@ class H(BaseHTTPRequestHandler):
         if self.path.endswith("/healthz"):
             self._json(200, {"ok": True})
             return
-        # 管理面板 API（ModelMux 的代理断言用）：校验 Bearer 注入 + 原样透传
+        # 管理面板 API（Mergence 的代理断言用）：校验 Bearer 注入 + 原样透传
         if self.path.endswith("/panel/api/overview"):
             if not self._authed():
                 self._json(401, {"error": {"message": "missing or bad token"}})

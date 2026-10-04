@@ -1,6 +1,6 @@
 # 第三方许可（THIRD-PARTY-LICENSES）
 
-本目录存放**上游项目的许可原文**，与 ModelMux 自身的 `LICENSE`（MIT）分区存放。
+本目录存放**上游项目的许可原文**，与 Mergence 自身的 `LICENSE`（MIT）分区存放。
 
 - 这里的文件属于各自的著作权人，**不是本项目的代码**。
 - 对应代码位于 `src/internal/provider/<上游名>/`，均为**照搬**（MIT 允许复制，要求保留版权声明与许可文本）。

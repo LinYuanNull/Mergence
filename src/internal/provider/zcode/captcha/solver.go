@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/provider/zcode/captcha/cdp"
+	"mergence/internal/provider/zcode/captcha/cdp"
 )
 
 // Solver 解一次验证码，返回可放进 `X-Aliyun-Captcha-Verify-Param` 的凭据。

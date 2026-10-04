@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """GUI 形态回归验证：确认 P3 的改动没有破坏 P1 的窗口与托盘生命周期。
 
-用隔离的 MODELMUX_HOME，不动用户的真实配置。
+用隔离的 MERGENCE_HOME，不动用户的真实配置。
 
 两个检查口径上的坑，这里都绕开了：
   - tasklist 的「没有匹配」提示是**本地化中文**，用 "INFO" 判断「无进程」会永远判错。
-    这里改成按镜像名匹配行。
+    这里改成按**本进程自己起的 PID** 匹配行（见 pid_alive）。不能按镜像名数：
+    机器上可能同时跑着用户自己的 Mergence 实例（单实例互斥体只防同一安装目录重复
+    启动），按镜像名会把别人的进程算进来，两条生命周期断言就变成假失败。
   - 托盘窗口是 message-only window（HWND_MESSAGE），**FindWindow / EnumWindows 都
     枚举不到**，用 FindWindow 判断「托盘没起来」是假阴性。这里改用
     Shell_NotifyIconGetRect —— 它以「通知区里到底有没有这个图标」为准，
@@ -25,12 +27,12 @@ import urllib.request
 # 项目根：由本文件位置推导（test/ 的上一层），不写死本机绝对路径。
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = os.path.join(ROOT, "test", "gui_home")
-EXE = os.path.join(ROOT, "ModelMux.exe")
+EXE = os.path.join(ROOT, "Mergence.exe")
 FAKE = os.path.join(ROOT, "test", "fake_upstream.py")
-# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MODELMUX_PY 覆盖）。
-PY = os.environ.get("MODELMUX_PY", sys.executable)
+# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MERGENCE_PY 覆盖）。
+PY = os.environ.get("MERGENCE_PY", sys.executable)
 FAKE_PORT = 18094
-TITLE = "ModelMux"
+TITLE = "Mergence"
 ICON_ID = 1
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -63,6 +65,26 @@ def proc_count(exe):
     out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"],
                          capture_output=True, text=True, errors="ignore").stdout
     return sum(1 for line in out.splitlines() if exe.lower() in line.lower())
+
+
+def pid_alive(pid):
+    """**本进程自己起的那个 PID** 还在不在。
+
+    为什么不能按镜像名数：机器上完全可能同时跑着用户自己的 Mergence
+    （单实例互斥体只防「同一安装目录重复启动」，不同目录各跑各的），
+    那时 `proc_count("Mergence.exe")` 恒 >= 2 —— 「关窗后只隐藏、进程继续」
+    永远看到 2 个、「退出后进程完全结束」永远剩 1 个，两条断言变成
+    与本次运行无关的假失败。按 PID 判才是在测「我们起的那个进程」。
+
+    tasklist /FO CSV 每个字段都被引号包住（..."Mergence.exe","1234",...），
+    所以匹配带引号的 PID 而不是 ,1234, —— 后者永远匹配不上，会让断言空转。
+    """
+    if not pid:
+        return False
+    out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"],
+                         capture_output=True, text=True, errors="ignore").stdout
+    want = '"%d"' % int(pid)
+    return any(want in line for line in out.splitlines())
 
 
 class NOTIFYICONIDENTIFIER(ctypes.Structure):
@@ -101,7 +123,7 @@ def main():
     if os.path.isdir(HOME):
         shutil.rmtree(HOME, ignore_errors=True)
     os.makedirs(os.path.join(HOME, "config"), exist_ok=True)
-    with open(os.path.join(HOME, "config", "modelmux.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(HOME, "config", "mergence.json"), "w", encoding="utf-8") as f:
         json.dump(CONFIG, f, ensure_ascii=False, indent=2)
 
     fake = subprocess.Popen([PY, FAKE, str(FAKE_PORT)],
@@ -110,11 +132,11 @@ def main():
     try:
         time.sleep(1.0)
         env = dict(os.environ)
-        env["MODELMUX_HOME"] = HOME
-        env.pop("MODELMUX_HEADLESS", None)
+        env["MERGENCE_HOME"] = HOME
+        env.pop("MERGENCE_HEADLESS", None)
         mm = subprocess.Popen([EXE], env=env)
 
-        log = os.path.join(HOME, "data", "logs", "modelmux.log")
+        log = os.path.join(HOME, "data", "logs", "mergence.log")
         port, deadline = None, time.time() + 30
         while time.time() < deadline and not port:
             for line in read_log(log).splitlines():
@@ -190,9 +212,9 @@ def main():
                 flipped = f"visible={vis} exists={exists}"
                 break
             time.sleep(0.2)
-        alive = proc_count("ModelMux.exe")
+        alive = pid_alive(mm.pid)
         ok("关窗后只隐藏、进程继续（且 5 秒内不自己弹回来）",
-           alive == 1 and stable, f"进程 {alive} 个；{flipped or '稳定'}")
+           alive and stable, f"进程{'在' if alive else '没了'}；{flipped or '稳定'}")
         ok("隐藏后日志未出现「窗口已恢复显示」",
            "窗口已恢复显示" not in read_log(log),
            "窗口被杂散托盘消息重新显示了")
@@ -210,10 +232,10 @@ def main():
             print("      退出请求异常（可能已退出）：", e)
 
         deadline = time.time() + 25
-        while time.time() < deadline and proc_count("ModelMux.exe") > 0:
+        while time.time() < deadline and pid_alive(mm.pid):
             time.sleep(0.5)
-        left = proc_count("ModelMux.exe")
-        ok("退出后进程完全结束", left == 0, f"仍有 {left} 个")
+        left = proc_count("Mergence.exe") if pid_alive(mm.pid) else 0
+        ok("退出后进程完全结束", not pid_alive(mm.pid), f"仍有 {left} 个")
 
         # ── 幽灵图标：进程没了，通知区里不该还留着
         gone, last_hr = False, None

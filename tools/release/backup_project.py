@@ -3,9 +3,12 @@
 
 用途是「文件别丢」，所以**只排除可再生的运行期缓存**，其余一律原样打包。
 
-    python tools/release/backup_project.py          # 输出到 <仓库上级>/_backups/
+    python tools/release/backup_project.py          # 输出到 <工作区根>/_backups_mergence/
     BACKUP_DIR=D:/somewhere python tools/release/backup_project.py
-    MODELMUX_SRC=D:/path/to/modelmux python tools/release/backup_project.py
+    MERGENCE_SRC=D:/path/to/mergence python tools/release/backup_project.py
+
+默认输出目录带一份 README.md 索引（列出每份备份是什么/能否删）；
+敏感数据不要往这里放 —— 它不在 git 仓库内，但仍是明文落盘。
 
 路径全部可推导/可覆盖，不写死本机绝对路径。
 """
@@ -18,11 +21,15 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 本脚本在 tools/release/ 下，仓库根是 HERE 的上两级。
-SRC = os.path.abspath(os.environ.get("MODELMUX_SRC") or os.path.dirname(os.path.dirname(HERE)))
+SRC = os.path.abspath(os.environ.get("MERGENCE_SRC") or os.path.dirname(os.path.dirname(HERE)))
 
-# 默认放在仓库的同级目录，避免备份被一起打包/误删
+# 默认放在仓库的同级目录，避免备份被一起打包/误删。
+# 归档目录名固定为 _backups_mergence：集中归档区，带 README.md 索引。
+# 注意 SRC 可能是 <根>/WorkBuddy/mergence 这样的嵌套路径，往上两级才是工作区根。
+_ENV_HOME = os.path.dirname(os.path.dirname(SRC)) if os.path.basename(SRC) == "mergence" \
+    else os.path.dirname(SRC)
 OUT_DIR = os.path.abspath(os.environ.get("BACKUP_DIR")
-                          or os.path.join(os.path.dirname(SRC), "_backups"))
+                          or os.path.join(_ENV_HOME, "_backups_mergence"))
 
 # 名字命中即整棵剪掉
 PRUNE_DIRS = {
@@ -31,15 +38,18 @@ PRUNE_DIRS = {
     os.path.join("data", "cache"),
     os.path.join("data", "logs"),
     os.path.join("data", "instances"),
-    # 测试跑出来的隔离根目录（各脚本自己的 MODELMUX_HOME）
+    # 测试跑出来的隔离根目录（各脚本自己的 MERGENCE_HOME）
     os.path.join("test", "home"),
     os.path.join("test", "gui_home"),
     os.path.join("test", "ui_home"),
     os.path.join("test", "claim_home"),
     os.path.join("test", "shots"),
+    # 原生 zcode 两套 e2e 各自的隔离根（同样会写出几十 MB 的 Edge 缓存）
+    os.path.join("test", "zcacc_home"),
+    os.path.join("test", "zcnative_home"),
 }
 # 文件名命中即跳过
-PRUNE_FILES = {"ModelMux_new.exe~", "_t.exe", "mg.pid"}
+PRUNE_FILES = {"Mergence.exe~", "Mergence_new.exe~", "_t.exe", "mg.pid"}
 
 # 设计文档现在就在仓库内的 docs/ 下，os.walk 会原样打包，无需再单独补。
 
@@ -58,7 +68,7 @@ def sha256(path, buf=1 << 20):
 def main():
     stamp = os.environ.get("STAMP") or time.strftime("%Y%m%d-%H%M%S")
     os.makedirs(OUT_DIR, exist_ok=True)
-    out = os.path.join(OUT_DIR, "modelmux-full-%s.zip" % stamp)
+    out = os.path.join(OUT_DIR, "mergence-full-%s.zip" % stamp)
 
     files, skipped_dirs, skipped_files = [], [], []
     for dirpath, dirnames, filenames in os.walk(SRC):
@@ -76,24 +86,24 @@ def main():
             if fn in PRUNE_FILES:
                 skipped_files.append(os.path.join(rel, fn) if rel else fn)
                 continue
-            inner = "/".join(x for x in ("modelmux", rel.replace(os.sep, "/"), fn) if x)
+            inner = "/".join(x for x in ("mergence", rel.replace(os.sep, "/"), fn) if x)
             files.append((os.path.join(dirpath, fn), inner))
 
-    exe = os.path.join(SRC, "ModelMux.exe")
+    exe = os.path.join(SRC, "Mergence.exe")
     exe_hash = sha256(exe) if os.path.exists(exe) else "(缺失)"
 
     info = [
-        "ModelMux 快照",
+        "Mergence 快照",
         "生成时间: %s" % stamp,
         "源目录  : %s" % SRC,
-        "编译产物: ModelMux.exe  sha256=%s" % exe_hash,
+        "编译产物: Mergence.exe  sha256=%s" % exe_hash,
         "",
-        "内容: 源码(src/) + 用户配置(config/) + 编译产物(ModelMux.exe) + 前端真源(web/) + 设计文档(docs/)",
+        "内容: 源码(src/) + 用户配置(config/) + 编译产物(Mergence.exe) + 前端真源(web/) + 设计文档(docs/)",
         "已排除(可再生缓存): %s" % ", ".join(sorted(skipped_dirs)),
         "已排除(陈旧/未知二进制): %s" % ", ".join(sorted(skipped_files)),
         "",
         "恢复: 解到任意目录后 `python tools/release/build.py`；",
-        "      等价于 `go build -C src -trimpath -ldflags=\"-s -w -H windowsgui\" -o ../ModelMux.exe .`",
+        "      等价于 `go build -C src -trimpath -ldflags=\"-s -w -H windowsgui\" -o ../Mergence.exe .`",
         "注意: _ref/ 已移出仓库（内含真实账号 token），本快照不含它。",
     ]
 

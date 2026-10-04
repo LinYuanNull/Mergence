@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/logfmt"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/logfmt"
 )
 
 func (p *Pool) Disable(uid, reason string) {

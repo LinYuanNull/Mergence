@@ -111,17 +111,6 @@ func (a *PortAllocator) Save() error {
 	return os.Rename(tmp, a.path)
 }
 
-// Snapshot 返回当前端口映射的副本，供面板展示 base_url。
-func (a *PortAllocator) Snapshot() map[string]int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	out := make(map[string]int, len(a.last))
-	for k, v := range a.last {
-		out[k] = v
-	}
-	return out
-}
-
 func contains(s []int, v int) bool {
 	for _, x := range s {
 		if x == v {

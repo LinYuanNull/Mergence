@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"strings"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // currentAccessKey 当前生效的对外 Key（cfgMu 下读，端口/再生成并发安全）。
@@ -46,7 +46,7 @@ func (s *Server) withAccessKey(next http.HandlerFunc) http.HandlerFunc {
 			// 也接受 X-API-Key：部分客户端不方便自定义 Authorization
 			if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(r.Header.Get("X-API-Key"))), []byte(key)) != 1 {
 				writeOpenAIError(w, http.StatusUnauthorized,
-					"API Key 无效或缺失；请在 ModelMux 面板设置里复制正确的 Key",
+					"API Key 无效或缺失；请在 Mergence 面板设置里复制正确的 Key",
 					"invalid_request_error", "invalid_api_key")
 				return
 			}

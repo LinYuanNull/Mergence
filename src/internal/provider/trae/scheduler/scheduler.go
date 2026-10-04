@@ -8,8 +8,8 @@ import (
 	"log"
 	"time"
 
-	"modelmux/internal/provider/trae/pool"
-	"modelmux/internal/provider/trae/upstream"
+	"mergence/internal/provider/trae/pool"
+	"mergence/internal/provider/trae/upstream"
 )
 
 // Config 调度器依赖。

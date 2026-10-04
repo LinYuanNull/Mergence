@@ -1,4 +1,4 @@
-# ModelMux（模汇）
+# Mergence（模渊）
 
 把多个上游模型服务聚合成**本地一份 OpenAI Chat Completions 契约**的 Windows 桌面网关。
 
@@ -32,13 +32,13 @@
 python tools/release/build.py
 
 # 2) 运行（桌面壳 + 托盘）
-./ModelMux.exe
+./Mergence.exe
 ```
 
 也可以直接调 Go（此时 `src/internal/assets/` 用的是上次同步的副本）：
 
 ```bash
-go build -C src -trimpath -ldflags="-s -w -H windowsgui" -o ../ModelMux.exe .
+go build -C src -trimpath -ldflags="-s -w -H windowsgui" -o ../Mergence.exe .
 ```
 
 启动后托盘图标右键 →「打开面板」，或在浏览器里访问启动日志打印的地址（默认 `http://127.0.0.1:1234/`）。
@@ -56,20 +56,22 @@ curl http://127.0.0.1:1234/v1/chat/completions \
 根目录只有 exe 本体与按职责分开的文件夹——一个文件夹只放一类东西：
 
 ```
-modelmux/
-├─ ModelMux.exe          构建产物（go build 生成，唯一散落在根的文件）
+mergence/
+├─ Mergence.exe          构建产物（go build 生成，唯一散落在根的文件）
 ├─ README.md             ← 你正在读的
 ├─ LICENSE
 ├─ .gitignore
 │
 ├─ web/                  面板前端资源（唯一真源：HTML / JS / CSS）
-├─ config/               用户配置（modelmux.json，首次启动自动生成）
+├─ config/               用户配置（mergence.json，首次启动自动生成）
 ├─ data/                 运行期数据（logs/ usage/ cache/ instances/ ports.json）
 │
 ├─ src/                  Go 源码
 │  ├─ main.go            启动顺序：配置 → 日志 → 单实例 → 端口 → 编排 → 服务 → 窗口/托盘
 │  ├─ go.mod / go.sum
-│  ├─ app.ico / appres.syso / winres/   PE 资源：图标、DPI 清单、版本信息
+│  ├─ app.ico           图标母版（6 档 BMP 编码；构建不消费它，见「图标资源」）
+│  ├─ appres.syso       PE 资源：图标组 + DPI 清单 + 版本信息（单 .rsrc 段）
+│  ├─ winres/           go-winres 输入：winres.json + icon{16..256}.png
 │  └─ internal/
 │     ├─ config/         配置读写与归一化（未知协议明确报错，不猜默认值）
 │     ├─ logging/        结构化日志：内存环 + 滚动文件
@@ -88,9 +90,9 @@ modelmux/
 ├─ test/                 端到端验证脚本（假上游 + CDP 驱动真实界面）
 │  └─ shot_tools/        界面截图（给人看的，不含断言）
 ├─ tools/                开发与发布期脚本
-│  ├─ release/           构建、全量快照、公开副本导出
-│  ├─ icon/              图标生成与比对
-│  └─ win/               桌面集成：快捷方式、窗口截图
+│  ├─ release/           构建、全量快照、公开副本导出、提交前泄露扫描
+│  ├─ icon/              图标生成与 PE 资源核对（见「图标资源」一节）
+│  └─ win/               桌面集成：快捷方式生成（mkshortcut）、窗口截图
 └─ docs/                 设计与改造记录
 ```
 
@@ -130,7 +132,7 @@ modelmux/
      因此按实测契约**从零重写**成 Go（`src/internal/provider/zcode/`）。
      本仓库里没有任何上游代码，所以也不需要它的许可原文。
 
-   两种方式都**不是**上游 AGPL 代码，因此都可内嵌且不改变 ModelMux 的 MIT。
+   两种方式都**不是**上游 AGPL 代码，因此都可内嵌且不改变 Mergence 的 MIT。
    AGPL 项目（`new-api`）仍只允许**进程级**调用：它是独立子进程，不构成衍生作品。
 3. **不随包分发第三方二进制**。托管型 provider 由用户自行获取，本项目不分发。
 
@@ -149,7 +151,7 @@ modelmux/
 | 类型 | 配置键 | 运行形态 |
 |---|---|---|
 | **内嵌型** | `embedded_providers` | 跑在网关进程内。自定义 OpenAI 兼容端点，或选用内置预设（见下一节）。支持多 Key 轮询、权重、模型前缀。 |
-| **托管型** | `managed_providers` | 由 ModelMux 托管：进程内原生（内置实现，不起外部进程）或独立子进程（动态分配端口、注入环境变量、探活、按树杀干净）。由 `mode` 字段决定。 |
+| **托管型** | `managed_providers` | 由 Mergence 托管：进程内原生（内置实现，不起外部进程）或独立子进程（动态分配端口、注入环境变量、探活、按树杀干净）。由 `mode` 字段决定。 |
 
 托管型渠道的管理面板由网关**反向代理**到面板里，`Authorization` 由服务端注入——
 面板侧不接触上游密钥。
@@ -163,7 +165,7 @@ modelmux/
 
 托管型渠道有**两种运行方式**，由渠道的 `mode` 决定，模板会替你选好：
 
-- **进程内原生**（`mode=native`）：ModelMux 自己装配内置实现，在本进程内起一个只绑 `127.0.0.1`
+- **进程内原生**（`mode=native`）：Mergence 自己装配内置实现，在本进程内起一个只绑 `127.0.0.1`
   的服务。**不需要任何外部可执行文件**，面板与控制台都照常使用。
 - **独立子进程**（`mode=process`，缺省）：编排器动态分配端口、注入环境变量、探活、退出时按树杀干净。
   升级前的配置没有 `mode` 字段，一律按子进程解释，行为与旧版完全一致。
@@ -181,7 +183,7 @@ modelmux/
 > `zcode` 是**独立重写**：上游 `dengyie/zcode2api`（AGPL-3.0）只作为**契约来源**
 > （在其上采样出 HTTP / 落盘 / 出站三类契约），本项目按契约从零实现，
 > 仓库里没有任何上游代码，因此 `src/THIRD-PARTY-LICENSES/` 里**没有** zcode 目录。
-> 表中其余项目都是**独立程序，由使用者自行获取与部署**：ModelMux **不包含也不分发**它们的二进制，
+> 表中其余项目都是**独立程序，由使用者自行获取与部署**：Mergence **不包含也不分发**它们的二进制，
 > AGPL 上游（`new-api`）仅以独立进程方式调用、不构成衍生作品。
 
 ### 内嵌型预设（进程内转发）
@@ -207,7 +209,7 @@ modelmux/
 - **MIT 上游照搬源码内嵌**（如 `workbuddy`、`trae`）：逐字保留上游文件头与版权声明，许可原文集中放在
   [`src/THIRD-PARTY-LICENSES/`](src/THIRD-PARTY-LICENSES/)，照搬部分不改变本项目自身的 MIT。
 - **自己独立重写**（如 `zcode`）：按实测契约从零实现，仓库里不含任何上游代码，可内嵌。
-- **AGPL 上游仅进程级调用**（当前的 `new-api`）：ModelMux 只把已存在于本机的程序
+- **AGPL 上游仅进程级调用**（当前的 `new-api`）：Mergence 只把已存在于本机的程序
   作为子进程拉起，**不包含也不分发**其二进制，也不代其上游服务授予任何权利，
   不构成衍生作品；各项目自身的免责声明同样适用。
 
@@ -237,32 +239,50 @@ python tools/release/build.py --no-build # 只同步，不编译
 直接调 Go 也可以，但要**自己保证** `src/internal/assets/` 是最新的：
 
 ```bash
-go build -C src -trimpath -ldflags="-s -w -H windowsgui" -o ../ModelMux.exe .
+go build -C src -trimpath -ldflags="-s -w -H windowsgui" -o ../Mergence.exe .
 ```
 
 `-H windowsgui` 必须有，否则会多出一个黑色控制台窗口。
 
-图标资源 `src/appres.syso` 已随仓库提供，`go build` 会自动拾取（同目录的 `*.syso` 会被自动收集）。
+`src/appres.syso` 已随仓库提供，`go build` 会自动拾取（同目录的 `*.syso` 会被自动收集）。
+它由 **go-winres** 按 `src/winres/winres.json` 生成，一个 `.rsrc` 段里同时装三样东西：
+`RT_GROUP_ICON`（6 档图标）+ `RT_MANIFEST`（DPI `permonitorv2` 清单）+ `RT_VERSION`（版本信息）。
+**不要用 `akavel/rsrc -ico app.ico` 去重建**——它只能出图标组，会**静默丢掉 DPI 清单与版本信息**。
 需要重建时：
 
 ```bash
-cd src && go run github.com/akavel/rsrc@v0.10.2 -ico app.ico -o appres.syso
+cd src && go run github.com/tc-hib/go-winres@latest make \
+  --in winres/winres.json --out appres.syso --no-suffix --arch amd64
 ```
+
+重建后核对资源类型（应看到 6 个 `RT_ICON` + `RT_GROUP_ICON` + `RT_VERSION` + `RT_MANIFEST`，
+且 `.rsrc` 只有一段）：
+
+```bash
+python tools/icon/pe_resources.py Mergence.exe
+```
+
+关于两个图标文件的分工：
+
+- **构建真正吃的是** `src/winres/winres.json` + `src/winres/icon{16,32,48,64,128,256}.png`。
+- `src/app.ico`（BMP 编码、同 6 档）是这批 PNG 的**母版**，`go build` **不消费它**。
+  它是 `tools/icon/build_mergence_icon.py` 从一张 1440×1440 的 PNG logo 生成的，
+  而那张源图**不在仓库里** ⇒ `app.ico` 目前不能在仓库内复现，请勿随手删除。
 
 ## 运行与配置
 
 ```bash
-ModelMux.exe                 # 桌面壳 + 托盘
-ModelMux.exe -headless       # 只跑服务（等价于 MODELMUX_HEADLESS=1）
+Mergence.exe                 # 桌面壳 + 托盘
+Mergence.exe -headless       # 只跑服务（等价于 MERGENCE_HEADLESS=1）
 ```
 
 **数据目录默认跟 exe 同级**，也就是「绿色 / 便携」形态：把整个文件夹拷到哪，配置和数据就跟到哪。
 
 ```
-modelmux/
-├─ ModelMux.exe
+mergence/
+├─ Mergence.exe
 ├─ config/
-│  └─ modelmux.json      配置（access_key 首次启动自动生成）
+│  └─ mergence.json      配置（access_key 首次启动自动生成）
 ├─ data/
 │  ├─ ports.json         上次用过的端口，重启优先复用
 │  ├─ logs/              结构化日志
@@ -274,11 +294,11 @@ modelmux/
 
 查找顺序（第一个成立者胜出）：
 
-1. 环境变量 `MODELMUX_HOME`（显式指定，最高优先级）
+1. 环境变量 `MERGENCE_HOME`（显式指定，最高优先级）
 2. **exe 所在目录**——但必须**实测可写**（会在该目录建临时文件再删掉验证），
    避免 exe 放在 `Program Files`、只读介质或受控文件夹访问拦截时静默失败
-3. `%LOCALAPPDATA%\ModelMux`（回落，Windows 上的常规选择）
-4. 系统临时目录下的 `ModelMux`（最后的兜底）
+3. `%LOCALAPPDATA%\Mergence`（回落，Windows 上的常规选择）
+4. 系统临时目录下的 `Mergence`（最后的兜底）
 
 `config/` 与 `data/` 缺失时会在启动时自动创建，不需要手工准备。
 
@@ -312,7 +332,7 @@ python test/verify_pick_ui.py      # 拉取模型全选与结果弹窗
 python test/verify_theme.py        # 首帧主题（防亮暗闪烁）
 python test/verify_claim.py        # 限时套餐定时领取链路
 python test/verify_zcode_accounts.py  # zcode 账号面板（托管型子进程 + 假网关）
-python test/verify_zcode_native.py    # zcode 内置原生（ModelMux 自己装配，无外部进程）
+python test/verify_zcode_native.py    # zcode 内置原生（Mergence 自己装配，无外部进程）
 python test/gui_check.py           # 托盘与窗口生命周期
 python test/check_sources.py       # 源码级不变式（内联 style、通知 API 是否被重新引入）
 python test/verify_silent_minimize.py  # 最小化 / 隐藏不得产生系统通知
@@ -323,21 +343,21 @@ python test/verify_proxy_real.py   # 真实 wb2api 账号管理代理（用你�
 
 | 脚本 | 前置条件 |
 |---|---|
-| `verify.py` / `verify_claim.py` / `verify_pick_ui.py` / `gui_check.py` / `verify_zcode_native.py` | 使用隔离的 `MODELMUX_HOME`，**不会动你的真实配置** |
-| `verify_layout_ui.py` / `verify_side_console.py` / `verify_upstream_ui.py` / `verify_theme.py` | 需要**本机已有一个实例在跑**（默认 `http://127.0.0.1:1234/`） |
-| `gui_check.py` | 需要**独占**：机器上不能有其它 ModelMux 实例，否则会被单实例逻辑唤出并退出 |
+| `verify.py` / `verify_claim.py` / `verify_pick_ui.py` / `gui_check.py` / `verify_zcode_native.py` / `verify_zcode_accounts.py` | 使用隔离的 `MERGENCE_HOME`，**不会动你的真实配置** |
+| `verify_layout_ui.py` / `verify_side_console.py` / `verify_upstream_ui.py` / `verify_theme.py` | 需要**本机已有一个实例在跑**（`BASE` 硬编码 `http://127.0.0.1:1234/`，脚本自己不起实例） |
+| `gui_check.py` | 需要**独占同一安装目录**：单实例互斥体按 exe 目录派生，同目录已有实例会被唤出并退出。想与在跑的实例共存，把 exe 复制到另一个目录再跑 |
 | `verify_workbuddy.py` | ⚠️ 会**写你的真实配置**，慎跑 |
 | `verify_proxy_real.py` | ⚠️ 用你的**真实配置**启动，会拉起真实托管子进程；需要本机真有一个可用的 wb2api 渠道 |
-| `verify_silent_minimize.py` | 需要**本机已有一个实例在跑**（按 exe 名找 PID，并会最小化该窗口） |
+| `verify_silent_minimize.py` | 需要**本机已有一个实例在跑**，并且**会真的最小化/隐藏它的窗口**。多实例机器上务必用 `MERGENCE_PID=<pid>` 锁定目标，否则可能操作用户正在用的窗口 |
 | `check_sources.py` | 不需要实例，纯源码检查 |
 
-`test/shot_tools/` 下是**截图工具**（`shots*.py`、`panel_shot.py`、`shot_settings.py`），
+`test/shot_tools/` 下是**截图工具**（`shots.py`、`shots_desktop.py`、`panel_shot.py`、`shot_settings.py`），
 只产出给人看的 PNG、不含任何断言，所以不在上面的验证清单里。
 
 ## 维护脚本
 
 ```bash
-python tools/release/build.py               # 构建：同步 web/ → src/internal/assets/，再编出根目录的 ModelMux.exe
+python tools/release/build.py               # 构建：同步 web/ → src/internal/assets/，再编出根目录的 Mergence.exe
 python tools/release/backup_project.py      # 全量快照（源码 + 配置 + 编译产物），默认输出到仓库同级的 _backups/
 python tools/release/export_for_github.py   # 导出可公开的干净副本（白名单式）
 ```
@@ -350,7 +370,7 @@ python tools/release/export_for_github.py   # 导出可公开的干净副本（�
 目标里还留着」的文件**（否则从白名单撤下的文件会永久留在公开仓库里），要保留它们设
 `GITHUB_EXPORT_NO_PRUNE=1`。
 
-三个脚本的路径都自动推导，也可用 `MODELMUX_SRC` / `BACKUP_DIR` / `GITHUB_EXPORT_DIR` / `GO` 覆盖。
+三个脚本的路径都自动推导，也可用 `MERGENCE_SRC` / `BACKUP_DIR` / `GITHUB_EXPORT_DIR` / `GO` 覆盖。
 
 ## 第三方与许可
 

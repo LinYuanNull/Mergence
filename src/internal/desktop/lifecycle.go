@@ -16,7 +16,7 @@ import (
 
 	webview2 "github.com/jchv/go-webview2"
 
-	"modelmux/internal/logging"
+	"mergence/internal/logging"
 )
 
 // Lifecycle 窗口生命周期管理器。

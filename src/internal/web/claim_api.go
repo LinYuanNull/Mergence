@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/claim"
-	"modelmux/internal/config"
-	"modelmux/internal/provider"
+	"mergence/internal/claim"
+	"mergence/internal/config"
+	"mergence/internal/provider"
 )
 
 // claimTimeout 单次领取的 HTTP 超时。
@@ -46,7 +46,7 @@ const claimAdminPath = "/admin/api/claim"
 // traeCheckinPath trae 的签到触发接口。
 //
 // 它不是上游原生的路由：上游的 scheduler 只在进程内按整点跑 RunCheckinNow()，
-// 没有 HTTP 入口。这个路径由 ModelMux 的原生装配层（internal/native/trae）
+// 没有 HTTP 入口。这个路径由 Mergence 的原生装配层（internal/native/trae）
 // 包在 handler 外面补出来，所以它同样落在 /admin/api 前缀下，
 // 走同一条代理路径与同一份凭据。常量与 native/trae.CheckinPath 必须一致。
 const traeCheckinPath = "/admin/api/checkin"
@@ -66,7 +66,7 @@ func claimPathFor(kind string) string {
 //   - **原生型**（SourceNative）：route key（空回落 `zcode`）—— 「后台密码」
 //     与「路由密钥」合并成一处。
 //   - **托管型子进程**（SourceManaged）：它自己的 `ZCODE_ADMIN_KEY`
-//     （ModelMux 侧存在 config.Claim.AdminKey）。
+//     （Mergence 侧存在 config.Claim.AdminKey）。
 //
 // 用 `up.Source` 而不是 kind 区分：kind 对两种形态都是 "zcode"。合并前
 // 「后台密码要两处同步、只改一边就整块 401」的故障，在**原生型**上已经消除；
@@ -171,7 +171,7 @@ func (s *Server) pickClaimChannel(cfg config.ClaimConfig) (*provider.Channel, er
 // 1005「名额用完」时上游会带 next_at（名额恢复时间），原样带回面板——
 // 用户据此知道该几点再试，而不是反复空转领取。
 //
-// trae 的签到接口（见 traeCheckinPath）由 ModelMux 侧补出，回执刻意做成同一形状，
+// trae 的签到接口（见 traeCheckinPath）由 Mergence 侧补出，回执刻意做成同一形状，
 // 所以这里只有路径不同，解析与翻译逻辑完全共用。
 func (s *Server) postClaim(ctx context.Context, root, path, key string) (claimResult, error) {
 	var out claimResult

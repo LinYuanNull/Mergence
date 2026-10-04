@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/authadmin"
-	"modelmux/internal/provider/zcode/bodytransform"
-	"modelmux/internal/provider/zcode/compat"
-	"modelmux/internal/provider/zcode/httpx"
-	"modelmux/internal/provider/zcode/marks"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/scheduler"
-	"modelmux/internal/provider/zcode/store"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/authadmin"
+	"mergence/internal/provider/zcode/bodytransform"
+	"mergence/internal/provider/zcode/compat"
+	"mergence/internal/provider/zcode/httpx"
+	"mergence/internal/provider/zcode/marks"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/scheduler"
+	"mergence/internal/provider/zcode/store"
 )
 
 // maxBodyBytes 与 adminapi 一致。
@@ -439,33 +439,6 @@ func (g *Gateway) marksWriter() marks.Writer {
 		return g.d.Marks
 	}
 	return marks.NewStdout()
-}
-
-// hasUsableAccount 保留给 A3 时代的调用方（面板状态查询）。
-func (g *Gateway) hasUsableAccount() bool {
-	for _, a := range g.d.Store.List() {
-		if a.Usable() {
-			return true
-		}
-	}
-	return false
-}
-
-// ModelsFromList 把逗号分隔的模型名解析成模型表（`--models` 用）。
-func ModelsFromList(csv string) []Model {
-	parts := strings.Split(csv, ",")
-	out := make([]Model, 0, len(parts))
-	for _, p := range parts {
-		id := strings.TrimSpace(p)
-		if id == "" {
-			continue
-		}
-		out = append(out, Model{ID: id, Type: "model", DisplayName: id, CreatedAt: "2025-01-01T00:00:00Z"})
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 // 保证 Models 与 models 包的账号判定口径一致（编译期约束，防止将来漂移）。

@@ -450,7 +450,7 @@ func anthropicUsageToOpenAI(u map[string]any) map[string]any {
 		"completion_tokens": outT,
 		// total 含缓存读：Anthropic 账单里的 token 总量是三者之和，
 		// 与 OpenAI 的 prompt(含缓存)+completion 口径对齐，
-		// 这样客户端看到的 total 与 ModelMux 记的计量一致。
+		// 这样客户端看到的 total 与 Mergence 记的计量一致。
 		"total_tokens": in + outT + cacheRead,
 	}
 	// 缓存读：Anthropic 单独给，且不计入 input_tokens。

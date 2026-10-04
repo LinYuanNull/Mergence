@@ -1,18 +1,18 @@
-// Package trae 把 trae2api-web 装配成一个 ModelMux 进程内原生服务。
+// Package trae 把 trae2api-web 装配成一个 Mergence 进程内原生服务。
 //
 // ── 这个包为什么存在 ────────────────────────────────────────
 //
 // 上游（`connectedGraph/trae2api-web`，MIT）的装配逻辑写在它自己的
 // `cmd/server/main.go` 里，而那是 `package main`——**不可 import**。所以要让
-// 上游的 http.Handler 跑在 ModelMux 进程内，必须在 ModelMux 侧把同一张对象图
+// 上游的 http.Handler 跑在 Mergence 进程内，必须在 Mergence 侧把同一张对象图
 // 重新装配一遍：auth → pool → upstream.Client → scheduler → server.Handler。
 //
 // 本包就是那张对象图，且**刻意不复刻上游的 cmd/**：
 //
-//   - 不做 CLI flag / 配置文件自动生成 / 优雅停机信号（这些由编排器与 ModelMux
+//   - 不做 CLI flag / 配置文件自动生成 / 优雅停机信号（这些由编排器与 Mergence
 //     自己的退出时序负责）；
 //   - 配置不走环境变量（`TW2A_*` 是「独立部署」场景的约定；进程内实例的配置
-//     由 ModelMux 渠道条目给出，落盘在实例自己的数据目录里）。
+//     由 Mergence 渠道条目给出，落盘在实例自己的数据目录里）。
 //
 // 落位的那份上游源码（`internal/provider/trae/`）保持逐字不动，
 // 好处是能直接 `git merge` 上游的 bug 修复——这也是当初选「fork + 照搬」
@@ -28,14 +28,14 @@
 //
 //  2. **签到没有 HTTP 入口，需要本包补一个**。workbuddy 的面板自带
 //     `/panel/api/*` 全套（含领取）；trae 的 scheduler 只在进程内按整点跑
-//     `RunCheckinNow()`，上游**没有**把它暴露成接口。ModelMux 的「限时套餐自动领取」
+//     `RunCheckinNow()`，上游**没有**把它暴露成接口。Mergence 的「限时套餐自动领取」
 //     （internal/claim）却是从**进程外**通过 HTTP 打渠道的，所以本包在 handler
 //     外面包一层 ServeMux，加一个 `POST /admin/api/checkin` 触发它。
 //     这一层是**纯增量**：上游 mux 一个字节没改，只是被挂在 `/` 下面。
 //
 // ── 数据落点 ──────────────────────────────────────────────
 //
-// 全部落在编排器给出的实例数据目录下，与其它实例、与 ModelMux 自身数据互不干扰：
+// 全部落在编排器给出的实例数据目录下，与其它实例、与 Mergence 自身数据互不干扰：
 //
 //	<data>/config.json   本实例的配置（键名与上游 config.json 逐字对齐）
 //	<data>/state.json    账号池状态（积分、冷却、启停）
@@ -57,15 +57,15 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/native"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/native"
 
-	"modelmux/internal/provider/trae/auth"
-	"modelmux/internal/provider/trae/pool"
-	"modelmux/internal/provider/trae/scheduler"
-	"modelmux/internal/provider/trae/server"
-	"modelmux/internal/provider/trae/upstream"
+	"mergence/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/pool"
+	"mergence/internal/provider/trae/scheduler"
+	"mergence/internal/provider/trae/server"
+	"mergence/internal/provider/trae/upstream"
 )
 
 // upstreamVersion 落位那份上游源码的版本号（仅日志/展示用，不参与逻辑）。
@@ -73,7 +73,7 @@ const upstreamVersion = "trae2api-web (native)"
 
 // PanelAPIPrefix 上游管理 API 的前缀。
 //
-// 这是接缝①②的目标前缀：ModelMux 的代理把 `/api/channels/<name>/upstream/<rest>`
+// 这是接缝①②的目标前缀：Mergence 的代理把 `/api/channels/<name>/upstream/<rest>`
 // 打到 `<root>/admin/api/<rest>`。集中导出是为了让它与渠道预设里的
 // `PanelAPIPrefix` 有同一个可见出处，避免两边各写一份而漂移。
 const PanelAPIPrefix = "/admin/api"
@@ -84,7 +84,7 @@ const HealthPath = "/healthz"
 // PanelPath 上游自带面板的路径（供「打开上游面板」外链用）。
 const PanelPath = "/admin"
 
-// CheckinPath ModelMux 专用的签到触发路径（见包注释第 2 点）。
+// CheckinPath Mergence 专用的签到触发路径（见包注释第 2 点）。
 //
 // 它落在 `/admin/api` 前缀下，因此走与其它管理请求**同一条代理路径**与**同一份
 // 凭据**（渠道的 route key），claim 侧不需要为 trae 单开一条鉴权通道。
@@ -107,7 +107,7 @@ func Boot(host config.ManagedProvider, dataDir string, lg *logging.Logger) (*nat
 	if err != nil {
 		return nil, err
 	}
-	// 路由 Key 由 ModelMux 侧持有并在转发时注入。原生服务与它共用同一个值：
+	// 路由 Key 由 Mergence 侧持有并在转发时注入。原生服务与它共用同一个值：
 	// 上游的 withAuth（转发通道）与 withAdminAuth（管理通道）读的都是
 	// cfg.APIKey，所以一个值同时管住两条通道，谁也别再抄一份密钥。
 	// 值为空即完全不鉴权（只绑回环，可接受）。
@@ -170,7 +170,7 @@ func Boot(host config.ManagedProvider, dataDir string, lg *logging.Logger) (*nat
 	outer.Handle("/", h)
 
 	// 上游用标准 log 包输出运维日志（签到结果、刷新失败）。
-	// 接到 ModelMux 的结构化日志上，否则这些行会直接进 stderr 而面板看不到。
+	// 接到 Mergence 的结构化日志上，否则这些行会直接进 stderr 而面板看不到。
 	restoreLog := mirrorLog(lg, host.Name)
 
 	// 排程常驻运行，直到 Close。
@@ -331,10 +331,10 @@ func startCallbackServer(port string, h http.Handler, lg *logging.Logger, name s
 	return cs
 }
 
-// mirrorLog 把标准 log 的输出镜像到 ModelMux 的结构化日志，返回恢复函数。
+// mirrorLog 把标准 log 的输出镜像到 Mergence 的结构化日志，返回恢复函数。
 //
 // 局限（与 workbuddy 装配层同款，已知且可接受）：标准 log 是进程级全局状态，
-// 同一进程内跑两个原生实例时，两条日志会同时进两边。原生实例在 ModelMux 里
+// 同一进程内跑两个原生实例时，两条日志会同时进两边。原生实例在 Mergence 里
 // 是单例（一个渠道），且日志本身按 provider 名打了标签，所以只是观感问题。
 func mirrorLog(lg *logging.Logger, name string) func() {
 	prev := log.Writer()

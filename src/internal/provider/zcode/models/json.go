@@ -67,18 +67,6 @@ func parseOrderedObject(b []byte) (*OrderedObject, error) {
 	return o, nil
 }
 
-// Has 报告键是否存在。
-func (o *OrderedObject) Has(key string) bool {
-	_, ok := o.vals[key]
-	return ok
-}
-
-// Raw 取原始值（不存在时返回 nil, false）。
-func (o *OrderedObject) Raw(key string) (json.RawMessage, bool) {
-	v, ok := o.vals[key]
-	return v, ok
-}
-
 // SetRaw 写入原始值：键已存在则**原位替换**（保持位置），否则追加到末尾。
 func (o *OrderedObject) SetRaw(key string, v json.RawMessage) {
 	if _, ok := o.vals[key]; !ok {
@@ -95,20 +83,6 @@ func (o *OrderedObject) Set(key string, v any) error {
 	}
 	o.SetRaw(key, b)
 	return nil
-}
-
-// Take 移除一个键（同时从顺序表里摘掉）。
-func (o *OrderedObject) Take(key string) {
-	if _, ok := o.vals[key]; !ok {
-		return
-	}
-	delete(o.vals, key)
-	for i, k := range o.keys {
-		if k == key {
-			o.keys = append(o.keys[:i], o.keys[i+1:]...)
-			break
-		}
-	}
 }
 
 // Bytes 按键顺序编码回 JSON。

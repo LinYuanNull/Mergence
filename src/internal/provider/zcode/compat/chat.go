@@ -31,8 +31,8 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/provider/zcode/bodytransform"
-	"modelmux/internal/provider/zcode/pyjson"
+	"mergence/internal/provider/zcode/bodytransform"
+	"mergence/internal/provider/zcode/pyjson"
 )
 
 // chatIDPrefix 是流式首帧 id 的前缀（实测 `chatcmpl-<24 位小写 hex>`）。

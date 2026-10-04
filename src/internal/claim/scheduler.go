@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // TickInterval 判定周期。30 秒足够细：窗口最短也有一分钟级容错。
@@ -161,7 +161,7 @@ func (s *Scheduler) Manual(ctx context.Context) Result {
 
 // safeRun 执行领取，panic 也要兜住。
 //
-// 领取失败不该让整个 ModelMux 挂掉：这是附加功能，
+// 领取失败不该让整个 Mergence 挂掉：这是附加功能，
 // 不能因为上游返回一个奇怪状态就带走主进程。
 func (s *Scheduler) safeRun(ctx context.Context, cfg config.ClaimConfig, trigger string) Result {
 	defer func() {

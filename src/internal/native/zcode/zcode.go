@@ -1,12 +1,12 @@
-// Package zcode 把 zcode2api 的原生实现装配成一个 ModelMux 进程内服务。
+// Package zcode 把 zcode2api 的原生实现装配成一个 Mergence 进程内服务。
 //
 // ── 这个包为什么存在 ────────────────────────────────────────
 //
 // Track 2 产出的 `zcode2api-go`（`LinYuanNull/zcode2api-go`，MIT）是一套**独立可用**
 // 的 HTTP 服务：自带 `http.ServeMux` 路由表、管理面板宿主、CLI 子命令、appdir 解析。
-// 到了 ModelMux 这里，那些「服务外壳」全部由编排层承担 —— ModelMux 已经起了回环
+// 到了 Mergence 这里，那些「服务外壳」全部由编排层承担 —— Mergence 已经起了回环
 // HTTP 服务、已经有面板、已经有数据目录。于是 Track 3 做的不是「把那个仓库搬过来」，
-// 而是**按 ModelMux 的 provider 接口面重新组织它的业务层**：
+// 而是**按 Mergence 的 provider 接口面重新组织它的业务层**：
 //
 //	去掉：internal/server（独立服务外壳）、cmd/（CLI）、internal/appdir（数据目录解析）
 //	保留：store / models / settings / agent / identity / bodytransform / compat /
@@ -21,28 +21,28 @@
 // 那两个是 MIT 上游 + 逐字照搬，好处是能 `git merge` 上游 bug 修复。
 // zcode 走的是**另一条路**：上游（`dengyie/zcode2api`）是 AGPL-3.0，**不能照搬**，
 // 所以 Track 2 起就是**独立重写**（契约驱动、按实测样本实现），
-// 这里只是把那份独立重写的业务层改挂到 ModelMux 的接缝上。
+// 这里只是把那份独立重写的业务层改挂到 Mergence 的接缝上。
 // 结果是：本仓库里**没有任何上游代码**，因此 `src/THIRD-PARTY-LICENSES/` 里
 // **没有 zcode 目录**（对照 workbuddy2api-panel / trae2api-web 两个）。
 //
 // ── 密码合并（Track 3 最大的简化收益）─────────────────────────
 //
 // 独立部署时密码有**两处**：zcode2api 自己的 `ZCODE_ADMIN_KEY`（首启写进
-// accounts.db 的 meta 表，之后以库为准），以及 ModelMux 侧 `config.Claim.AdminKey`
+// accounts.db 的 meta 表，之后以库为准），以及 Mergence 侧 `config.Claim.AdminKey`
 // —— 后者被 `web/proxy.go:panelAuthKey` 与 `claim/scheduler` 消费。
 // 「只改一边 = 内置面板整块 401 + 定时领取失效」是独立部署最经典的故障。
 //
-// 合并后只剩一处：本包把 **ModelMux 渠道的 route key**（`host.Route.APIKey`）
+// 合并后只剩一处：本包把 **Mergence 渠道的 route key**（`host.Route.APIKey`）
 // 当作唯一的后台密码，装配时**同时**注入到管理面鉴权器与账号库的 meta 初值里。
 // 于是 web 层的 `panelAuthKey` / `claimKeyFor` 都只需要取 route key，
 // 「两处同步」这件事从根上消失。
 //
 // ── 数据落点 ──────────────────────────────────────────────
 //
-// 全部落在编排器给出的实例数据目录下，与其它实例、与 ModelMux 自身数据互不干扰：
+// 全部落在编排器给出的实例数据目录下，与其它实例、与 Mergence 自身数据互不干扰：
 //
 //	<data>/accounts.db   账号池与设置（SQLite，落盘契约见 store 包）
-//	<data>/panel/        面板静态资源（可选，由 ModelMux 侧指向上游 frontend/）
+//	<data>/panel/        面板静态资源（可选，由 Mergence 侧指向上游 frontend/）
 package zcode
 
 import (
@@ -54,24 +54,24 @@ import (
 	"strings"
 	"sync"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/native"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/native"
 
-	"modelmux/internal/provider/zcode/adminapi"
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/authadmin"
-	"modelmux/internal/provider/zcode/captcha"
-	"modelmux/internal/provider/zcode/claim"
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/gateway"
-	"modelmux/internal/provider/zcode/httpx"
-	"modelmux/internal/provider/zcode/oauth"
-	"modelmux/internal/provider/zcode/pages"
-	"modelmux/internal/provider/zcode/quota"
-	"modelmux/internal/provider/zcode/reqlog"
-	"modelmux/internal/provider/zcode/settings"
-	"modelmux/internal/provider/zcode/store"
+	"mergence/internal/provider/zcode/adminapi"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/authadmin"
+	"mergence/internal/provider/zcode/captcha"
+	"mergence/internal/provider/zcode/claim"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/gateway"
+	"mergence/internal/provider/zcode/httpx"
+	"mergence/internal/provider/zcode/oauth"
+	"mergence/internal/provider/zcode/pages"
+	"mergence/internal/provider/zcode/quota"
+	"mergence/internal/provider/zcode/reqlog"
+	"mergence/internal/provider/zcode/settings"
+	"mergence/internal/provider/zcode/store"
 )
 
 // Kind 本原生实现在注册表里的键，也是配置里 `kind` 的取值。
@@ -205,7 +205,7 @@ func Boot(host config.ManagedProvider, dataDir string, lg *logging.Logger) (*nat
 		GatewayKey: gatewayKeyFn,
 	})
 
-	// 面板静态资源：ModelMux 侧若指了目录就挂上，否则走明确说明的占位页
+	// 面板静态资源：Mergence 侧若指了目录就挂上，否则走明确说明的占位页
 	// （与独立部署 `--panel-dir` 未配时的行为一致）。
 	panel := &pages.Handler{Dir: panelDir(host, home), Version: versionLabel}
 
@@ -216,9 +216,9 @@ func Boot(host config.ManagedProvider, dataDir string, lg *logging.Logger) (*nat
 	mux.Handle("/", panel)
 
 	// 领取调度：独立部署时由 cli serve 起一个常驻循环；合并后**关掉它** ——
-	// ModelMux 的「限时套餐自动领取」（internal/claim）统一接管定时，
+	// Mergence 的「限时套餐自动领取」（internal/claim）统一接管定时，
 	// 两套调度同时跑会重复领取。这里只提供 `POST /admin/api/claim` 让
-	// ModelMux 从进程外触发（与 trae 的签到入口同款设计）。
+	// Mergence 从进程外触发（与 trae 的签到入口同款设计）。
 	//
 	// 启动自刷保留：它是「启动触发一次额度查询」的实测行为（observations.md 4.4），
 	// 与定时无关。放 goroutine 里，不阻塞 Boot。
@@ -259,7 +259,7 @@ func routeKey(host config.ManagedProvider) string {
 // 优先级：渠道 Env 里的 `ZCODE_PANEL_DIR`（用户显式覆盖）→ 实例数据目录下
 // 约定位置 `<data>/panel/`。都没有时返回空串，pages.Handler 会给占位页。
 //
-// 为什么不默认去指上游 clone 的 frontend/：ModelMux 不随包分发上游前端
+// 为什么不默认去指上游 clone 的 frontend/：Mergence 不随包分发上游前端
 // （许可纪律），用户的 frontend/ 在哪只有用户知道，猜一个绝对路径必然错。
 func panelDir(host config.ManagedProvider, home string) string {
 	if v := strings.TrimSpace(host.Env["ZCODE_PANEL_DIR"]); v != "" {
@@ -272,7 +272,7 @@ func panelDir(host config.ManagedProvider, home string) string {
 	return ""
 }
 
-// logf 把验证码链路的诊断接到 ModelMux 的结构化日志上。
+// logf 把验证码链路的诊断接到 Mergence 的结构化日志上。
 func logf(lg *logging.Logger, name string) func(string, ...any) {
 	return func(format string, args ...any) {
 		lg.Info(fmt.Sprintf("zcode captcha: "+format, args...), "provider", name)
@@ -284,7 +284,7 @@ type metaResponse struct {
 	Version string `json:"version"`
 }
 
-// metaHandler 是健康/版本端点。ModelMux 的预设把 `health_path` 配成它。
+// metaHandler 是健康/版本端点。Mergence 的预设把 `health_path` 配成它。
 func metaHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {

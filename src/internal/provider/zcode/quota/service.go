@@ -21,10 +21,10 @@ import (
 	"net/http"
 	"sync"
 
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/identity"
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/identity"
+	"mergence/internal/provider/zcode/models"
 )
 
 // ErrSuccessShapeUnsampled 表示「上游三条都返回了 2xx」，而这一分支的响应结构

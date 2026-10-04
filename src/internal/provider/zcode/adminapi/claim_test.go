@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/zcode/claim"
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/store"
+	"mergence/internal/provider/zcode/claim"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/store"
 )
 
 // stubClaimer 是注入用的领取器：只回放一个预设结果 / 错误。

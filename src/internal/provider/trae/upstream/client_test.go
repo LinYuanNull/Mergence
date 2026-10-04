@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/auth"
 )
 
 func TestClassify(t *testing.T) {

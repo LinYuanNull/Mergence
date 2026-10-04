@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"modelmux/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/auth"
 )
 
 // accountSummary 列表/预览对外结构（脱敏）。

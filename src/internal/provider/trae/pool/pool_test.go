@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/auth"
 )
 
 func TestPickHighestCredits(t *testing.T) {

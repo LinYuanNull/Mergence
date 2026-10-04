@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"modelmux/internal/provider/zcode/httpx"
+	"mergence/internal/provider/zcode/httpx"
 )
 
 // 保真编码是**唯一出口**纪律的判据：靶机是 Python `json.dumps(..., ensure_ascii=False)`，

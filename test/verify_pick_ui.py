@@ -21,11 +21,11 @@ from drive_ui import EDGE, WS, wait_json  # noqa: E402  复用 CDP 客户端
 # 项目根：由本文件位置推导（test/ 的上一层），不写死本机绝对路径。
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = os.path.join(ROOT, "test", "ui_home")
-EXE = os.path.join(ROOT, "ModelMux.exe")
+EXE = os.path.join(ROOT, "Mergence.exe")
 FAKE = os.path.join(ROOT, "test", "fake_upstream.py")
 SHOTS = os.path.join(ROOT, "test", "shots")
-# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MODELMUX_PY 覆盖）。
-PY = os.environ.get("MODELMUX_PY", sys.executable)
+# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MERGENCE_PY 覆盖）。
+PY = os.environ.get("MERGENCE_PY", sys.executable)
 FAKE_PORT = 18094
 CDP_PORT = 9335
 
@@ -51,12 +51,12 @@ def main():
     try:
         time.sleep(1.0)
         env = dict(os.environ)
-        env["MODELMUX_HOME"] = HOME
-        env["MODELMUX_HEADLESS"] = "1"
+        env["MERGENCE_HOME"] = HOME
+        env["MERGENCE_HEADLESS"] = "1"
         mm = subprocess.Popen([EXE], env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        log = os.path.join(HOME, "data", "logs", "modelmux.log")
+        log = os.path.join(HOME, "data", "logs", "mergence.log")
         port, deadline = None, time.time() + 25
         while time.time() < deadline and not port:
             if os.path.isfile(log):

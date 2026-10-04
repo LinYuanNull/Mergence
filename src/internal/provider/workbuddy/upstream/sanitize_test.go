@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 const (

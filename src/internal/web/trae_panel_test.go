@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/config"
-	"modelmux/internal/provider"
+	"mergence/internal/config"
+	"mergence/internal/provider"
 )
 
 // trae 内置原生渠道的接缝测试。

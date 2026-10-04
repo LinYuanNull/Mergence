@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // degradeReason 连败降权（issue #114）写 reason 的固定文案：与冷却域的

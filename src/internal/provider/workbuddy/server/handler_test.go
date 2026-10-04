@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/pool"
-	"modelmux/internal/provider/workbuddy/prompt"
-	"modelmux/internal/provider/workbuddy/redisstore"
-	"modelmux/internal/provider/workbuddy/session"
-	"modelmux/internal/provider/workbuddy/upstream"
-	"modelmux/internal/provider/workbuddy/usage"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/pool"
+	"mergence/internal/provider/workbuddy/prompt"
+	"mergence/internal/provider/workbuddy/redisstore"
+	"mergence/internal/provider/workbuddy/session"
+	"mergence/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/usage"
 )
 
 // TestMain 默认关闭聊天表格日志（chatLogEnabled=false），消除 go test 期间的 stdout 噪音。

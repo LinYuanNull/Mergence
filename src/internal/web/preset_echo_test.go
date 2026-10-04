@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 // 面板「编辑渠道」的预设下拉必须反映渠道的**真实**模板。

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // cockpitAccount 映射 cockpit tools 导出格式的单个账号。

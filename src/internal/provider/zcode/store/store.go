@@ -21,9 +21,9 @@ import (
 
 	_ "modernc.org/sqlite" // 纯 Go SQLite 驱动，无 CGO
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/settings"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/settings"
 )
 
 // ErrNotFound 表示账号不存在。
@@ -100,7 +100,7 @@ func WithInitialSettings(c settings.Configured) Option {
 
 // WithForcedSetting **覆盖**写一个 meta 值（无视库里原值）。
 //
-// 用途只有一个：内嵌到 ModelMux 时，后台密码的真源是渠道的 route key
+// 用途只有一个：内嵌到 Mergence 时，后台密码的真源是渠道的 route key
 // （「密码合并」——独立部署时密码在网关库与本机配置各存一份，合并后只剩一处）。
 // 上游「首启写库、之后以库为准」的语义在**独立部署**下是对的，但内嵌形态下
 // 若仍以库为准，用户在渠道设置里改 route key 就不会生效 —— 那正是

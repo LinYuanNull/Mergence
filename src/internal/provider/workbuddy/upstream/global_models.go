@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // GlobalModelNames 国际版（global realm）历史静态名单（PLAN §7.2 附录 21 名）。

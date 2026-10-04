@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """领取链路的真实验证：起一个假 zcode2api 网关 + 一个托管渠道指向它，
-然后走完整的 ModelMux 领取流程。
+然后走完整的 Mergence 领取流程。
 
 与 verify.py 的差别：那边只验「配置能存、没渠道时给明确原因」，
 这边要验**真的领到了**——包括 Bearer 鉴权、回执翻译、1005 名额用完的
@@ -18,10 +18,10 @@ import urllib.request
 # 项目根：由本文件位置推导（test/ 的上一层），不写死本机绝对路径。
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = os.path.join(ROOT, "test", "claim_home")
-EXE = os.path.join(ROOT, "ModelMux.exe")
+EXE = os.path.join(ROOT, "Mergence.exe")
 FAKE_ZCODE = os.path.join(ROOT, "test", "fake_zcode.py")
-# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MODELMUX_PY 覆盖）。
-PY = os.environ.get("MODELMUX_PY", sys.executable)
+# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MERGENCE_PY 覆盖）。
+PY = os.environ.get("MERGENCE_PY", sys.executable)
 ZCODE_PORT = 18102
 ADMIN_KEY = "fake-admin-key-123"
 
@@ -76,23 +76,23 @@ def main():
         shutil.rmtree(HOME, ignore_errors=True)
     os.makedirs(os.path.join(HOME, "config"), exist_ok=True)
 
-    # 假网关**由 ModelMux 托管启动**（和真实用法一致）：它注入 ZCODE_PORT，
-    # 假网关据此监听。不手动起是因为托管渠道的地址由 ModelMux 分配，
+    # 假网关**由 Mergence 托管启动**（和真实用法一致）：它注入 ZCODE_PORT，
+    # 假网关据此监听。不手动起是因为托管渠道的地址由 Mergence 分配，
     # 手动起的固定端口对不上。
     gz = None
 
     env = dict(os.environ)
-    env["MODELMUX_HOME"] = HOME
-    env["MODELMUX_HEADLESS"] = "1"
+    env["MERGENCE_HOME"] = HOME
+    env["MERGENCE_HEADLESS"] = "1"
     mm = subprocess.Popen([EXE], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = None
     try:
-        port = wait_port(mm, os.path.join(HOME, "data", "logs", "modelmux.log"))
+        port = wait_port(mm, os.path.join(HOME, "data", "logs", "mergence.log"))
         if not port:
-            print("ModelMux 未启动")
+            print("Mergence 未启动")
             return 1
         base = f"http://127.0.0.1:{port}"
-        print("ModelMux 端口", port)
+        print("Mergence 端口", port)
 
         # 托管渠道：直接指向假网关（固定端口，省掉子进程编排）
         print("→ 创建托管渠道（会拉起子进程，给足超时）", flush=True)

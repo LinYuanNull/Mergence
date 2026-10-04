@@ -221,6 +221,9 @@ const VIEW_META = {
   'overview':    { t: '概览', sub: () => (S.status ? `已运行 ${S.status.uptime_sec}s` : '-') },
   'api':         { t: 'API 型平台', sub: () => `${S.channels.filter((c) => c.source !== 'managed').length} 个` },
   'acct':        { t: '积分型平台', sub: () => `${S.channels.filter((c) => c.source === 'managed').length} 个` },
+  // 新建渠道的独立视图。副标题不再报数量：这里回答的是「怎么加」，
+  // 与「已经有哪些」是两个问题，堆数量只会让人以为这是第三个列表页。
+  'add':         { t: '添加平台', sub: () => '新建渠道 · 先选类型' },
   'up-accounts': { t: '账号池', sub: () => UP.chan },
   'up-tasks':    { t: '任务中心', sub: () => UP.chan },
   'up-models':   { t: '模型与档位', sub: () => UP.chan },
@@ -231,7 +234,7 @@ const VIEW_META = {
   'up-zc-accounts': { t: '账号池', sub: () => UP.chan },
   'up-zc-monitor':  { t: '运行监控', sub: () => UP.chan },
   'up-zc-settings': { t: '网关设置', sub: () => UP.chan },
-  'logs':        { t: 'ModelMux 运行日志', sub: () => '本进程结构化日志' },
+  'logs':        { t: 'Mergence 运行日志', sub: () => '本进程结构化日志' },
   'settings':    { t: '设置', sub: () => '端口 / 密钥 / 窗口' },
 };
 
@@ -250,7 +253,7 @@ function writeNavSec(o) {
 
 /* 视图 → 所属分组。收起的分组里若藏着当前视图，用户会以为导航丢了。 */
 function navSecOf(view) {
-  if (view === 'api' || view === 'acct') return 'chan';
+  if (view === 'api' || view === 'acct' || view === 'add') return 'chan';
   if (view.indexOf('up-') === 0) return 'up';
   // 「设置」是侧栏里的独立入口（不在任何 .nav-sec 内），返回 ''。
   // 把它塞回 'ops' 会让 revealNavSection 去展开运维分组——可它压根不在里面。
@@ -316,14 +319,21 @@ function setView(name) {
 
   const primary = $('btnPrimary');
   primary.hidden = true; primary.onclick = null;
-  if (meta === 'api') { primary.hidden = false; primary.textContent = '添加 API 平台'; primary.onclick = () => openChannelForm(null, 'embedded'); }
-  if (meta === 'acct') { primary.hidden = false; primary.textContent = '添加积分型平台'; primary.onclick = () => openChannelForm(null, 'managed'); }
+  // 渠道类的「添加」统一收进侧栏「添加平台」视图，这里不再挂按钮。
+  // 挂上的话就等于又开了一个入口：按钮已经替你选好类型，表单第一项却还是
+  // 「渠道类型」二选一，同一件事被问两遍。
   if (meta === 'up-accounts') { primary.hidden = false; primary.textContent = '添加账号'; primary.onclick = openAddAccount; }
 
   revealNavSection(meta);
-  // 离开渠道视图就收起编辑区：表单是单例，留着会跟着跑到别的视图里
-  if (meta !== 'api' && meta !== 'acct') unmountChannelForm();
-  if (meta === 'api' || meta === 'acct') loadChannels();
+  // 渠道表单是单例，跟着「渠道」分组走：
+  //   add      —— 进这个视图就是来新建的，直接把表单挂进来；
+  //   api/acct —— 只有点某个渠道的「编辑」才挂进右侧编辑槽（在这里无条件
+  //               挂会弹出一张空表单，那不是这两个视图该有的默认样子）；
+  //   离开分组  —— 收回表单。同一分组内 api/acct/add 互切时表单不动，
+  //               填了一半的草稿不会因为切过去看一眼就没了。
+  if (meta === 'add') openAddView();
+  else if (meta === 'api' || meta === 'acct') loadChannels();
+  else unmountChannelForm();
   if (meta === 'overview') loadMetrics(true);
   if (meta === 'logs') startLogPoll();
   if (meta === 'settings') loadSettings();
@@ -450,7 +460,7 @@ function upConsoleItems(c) {
         <i>${icon}</i><span>${esc(label)}</span></a>`).join('');
   }
   if (c.console_kind === 'zcode') {
-    // zcode2api：原生视图（账号池 / 运行监控 / 网关设置）。密码由 ModelMux
+    // zcode2api：原生视图（账号池 / 运行监控 / 网关设置）。密码由 Mergence
     // 服务端注入，浏览器不接触密码，所以查看无需输入面板密码。
     return [
       ['up-zc-accounts', '账号池', '◍'],
@@ -637,11 +647,11 @@ async function loadChannels() {
     const acctChs = acctAll.filter((c) => c.account_count !== 0);
     const acctHidden = acctAll.length - acctChs.length;
     $('apiList').innerHTML = apiChs.length ? apiChs.map(chCardHTML).join('')
-      : '<div class="empty">还没有 API 型平台。点右上角「添加 API 平台」开始。</div>';
+      : '<div class="empty">还没有 API 型平台。左侧「添加平台」里选「API 型平台」即可开始。</div>';
     $('acctList').innerHTML = acctChs.length ? acctChs.map(chCardHTML).join('')
       : (acctHidden > 0
-        ? '<div class="empty">还没有已添加账号的平台。点右上角「添加账号」开始。</div>'
-        : '<div class="empty">还没有积分型平台。点右上角「添加积分型平台」开始。</div>');
+        ? '<div class="empty">还没有已添加账号的平台。到上面「控制台」的账号池里添加账号。</div>'
+        : '<div class="empty">还没有积分型平台。左侧「添加平台」里选「积分型平台」即可开始。</div>');
     renderAcctHiddenNote(acctHidden);
   } catch (e) {
     toast('渠道加载失败：' + e.message, 'err');
@@ -714,35 +724,93 @@ function renderTest(tr) {
     : '<div class="tstep bad"><span class="ic">✕</span><span class="tx">测试未通过</span></div>');
 }
 
-/* ── 渠道表单（嵌在大面板里的编辑区） ───────────────────
+/* ── 渠道表单（三个宿主视图共用的单例） ──────────────────
  *
- * 表单 DOM 是单例（#chModal），两个渠道视图各有一个挂载槽。
- * 为什么不是「每个视图各复制一份」：字段有几十个，两份必然出现
+ * 表单 DOM 是单例（#chModal），三个视图各有一个挂载槽：
+ *   API 型 / 积分型 —— 列表右侧的内联编辑槽（点渠道的「编辑」才挂）；
+ *   添加平台        —— 整页就是这张表单（进视图即挂）。
+ * 为什么不是「每个视图各复制一份」：字段有几十个，多份必然出现
  * 「这份改了那份还留着旧值」的错误，而这种错要到保存时才发现。
  */
-function chEditorView() {
-  return Store.get().view === 'api' ? 'api' : 'acct';
+function chEditorSlot() {
+  const view = Store.get().view;
+  if (view === 'add') return $('addEditor');
+  return document.querySelector(`#view-${view === 'api' ? 'api' : 'acct'} .ch-editor`);
+}
+
+/* openAddView 进入「添加平台」时保证表单在位。
+ * 已经挂在这个槽里、且处于「新建」态，就只当作重新可见——保留用户填了一半的
+ * 草稿：切走看一眼别处再回来（或点「刷新」）就把表单清空，等于让人重填一遍。
+ * 反之（上一次是编辑某个渠道，或表单停在别的槽里）就换成一张干净的新表单。 */
+function openAddView() {
+  const modal = $('chModal');
+  if (modal && modal.parentElement === $('addEditor') && !editingName) {
+    mountChannelForm();
+    return;
+  }
+  openChannelForm(null);
 }
 
 function mountChannelForm() {
-  const view = chEditorView();
-  const slot = document.querySelector(`#view-${view} .ch-editor`);
+  const slot = chEditorSlot();
   const modal = $('chModal');
   if (!slot || !modal) return;
+  const view = Store.get().view;
+  // 先把别的视图留下的「编辑中」两栏态撤掉。不清的话，从 api 的编辑态直接
+  // 切到「添加平台」时表单被搬走了，可 #apiSplit 还带着 .editing——回头再看
+  // 那个视图，左边列表被挤窄、右边空空如也。
+  document.querySelectorAll('.chsplit.editing').forEach((el) => {
+    if (el.id !== view + 'Split') el.classList.remove('editing');
+  });
   if (modal.parentElement !== slot) slot.appendChild(modal);
   modal.hidden = false;
   modal.classList.add('inline');
-  const split = $(view + 'Split');
-  if (split) split.classList.add('editing');
+  // 两栏布局只有 api/acct 有；「添加平台」没有列表，不需要。
+  if (view === 'api' || view === 'acct') {
+    const split = $(view + 'Split');
+    if (split) split.classList.add('editing');
+  }
+  syncFormChrome();
 }
 
 function unmountChannelForm() {
   const modal = $('chModal');
-  if (modal) modal.hidden = true;
+  if (modal) {
+    modal.hidden = true;
+    // 关闭要做三件事，缺一件都会留下可见残留：
+    //  1) hidden=true        —— 逻辑上标记为关闭；
+    //  2) 移除 .inline        —— 这个类把全屏遮罩改回文档流布局（display:block）。
+    //                         它是类选择器，特异性压得过 [hidden] 的 display:none，
+    //                         不摘掉的话面板仍会显示在渠道列表正下方；
+    //  3) 送回 body 原址      —— 表单单例原本挂在 body 下。留在编辑槽里会让
+    //                         `.ch-editor:empty { display:none }` 匹配不上，槽位
+    //                         不再塌陷，列表下方白留一段行间距。
+    modal.classList.remove('inline');
+    if (modal.parentElement && modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+  }
+  const close = $('btnCloseCh');
+  if (close) close.hidden = false;
   document.querySelectorAll('.chsplit.editing').forEach((el) => el.classList.remove('editing'));
 }
 
+/* syncFormChrome 按「表单挂在哪儿」调整外框。
+ * 「添加平台」是独立视图：标题跟着视图叫「添加平台」，也没有「关闭」——
+ * 关掉只会把当前这个空视图留在原地，不像弹层那样有关掉的对象。
+ * 编辑态要带上是哪个渠道：分栏编辑时列表还在旁边，标题不说清就容易改错行。 */
+function syncFormChrome() {
+  const modal = $('chModal');
+  const inAdd = !!(modal && modal.parentElement && modal.parentElement.id === 'addEditor');
+  const close = $('btnCloseCh');
+  if (close) close.hidden = inAdd;
+  $('chFormTitle').textContent = editingName
+    ? '编辑渠道 · ' + (editingLabel || editingName)
+    : (inAdd ? '添加平台' : '添加渠道');
+}
+
 let editingName = '';
+let editingLabel = '';
 let formKind = 'embedded';
 
 function setKind(kind) {
@@ -807,7 +875,10 @@ function applyPreset(id) {
 
 function openChannelForm(raw, forceKind) {
   editingName = raw ? raw.name : '';
-  $('chFormTitle').textContent = raw ? '编辑渠道 · ' + (raw.display_name || raw.name) : '添加渠道';
+  editingLabel = raw ? (raw.display_name || raw.name) : '';
+  // 标题的最终文案由 syncFormChrome 定：此刻还不知道表单将挂到哪个槽
+  // （「添加平台」里要显示成「添加平台」），挂载完成时它会再算一次。
+  syncFormChrome();
   $('formMsg').textContent = '';
   $('testBox').hidden = true;
   $('btnForceSave').hidden = true;
@@ -912,13 +983,13 @@ function openChannelForm(raw, forceKind) {
 let gatewayKind = '';
 
 // managedMode 当前托管型渠道的运行方式：'' / 'process' = 独立子进程；
-// 'native' = 进程内原生（ModelMux 自己装配上游，不拉起任何可执行文件）。
+// 'native' = 进程内原生（Mergence 自己装配上游，不拉起任何可执行文件）。
 // 与 gatewayKind 一样：编辑时由 openChannelForm 回显，选模板时由 applyPreset 预填。
 let managedMode = '';
 
 // syncModeFields 按运行方式显隐「只有子进程才需要」的表单项。
 //
-// 原生型跑在 ModelMux 进程内：没有可执行文件，也没有端口环境变量可供注入，
+// 原生型跑在 Mergence 进程内：没有可执行文件，也没有端口环境变量可供注入，
 // 把「启动命令（标着必填）」「端口环境变量」「固定端口」留在原生渠道的表单里，
 // 用户会以为漏填了什么；而这些字段真填了，后端反而会把整个渠道禁用
 // （见 config 的 normalize：原生型带 command 直接禁用）。宁可不显示。
@@ -1037,8 +1108,16 @@ async function saveChannel(force) {
   formMsg('正在保存…');
   try {
     const d = await post('/api/channels', collectForm(), 90000);
+    // 收表单之前先记下这两件事：等会儿要判断「是不是从添加平台来的」、
+    // 以及刚加的是哪一类（unmount 本身不清 formKind，但读一眼更直白）。
+    const wasAdding = Store.get().view === 'add';
+    const kind = formKind;
     unmountChannelForm();
-    await loadChannels();
+    // 从「添加平台」加完就把人送到对应的列表去看新渠道：留在新建页
+    // 只能看到一张空表单，用户会怀疑到底存进去没有。setView 内部会重新
+    // 拉一次渠道列表，所以这一支不必再拉。
+    if (wasAdding) setView(kind === 'managed' ? 'acct' : 'api');
+    else await loadChannels();
     const notes = [];
     if ((d.warns || []).length) notes.push('提示：\n· ' + d.warns.join('\n· '));
     if (d.start_error) notes.push('渠道已保存，但子进程启动失败：\n' + d.start_error);
@@ -1326,7 +1405,7 @@ async function claimNow() {
   }
 }
 
-/* ── ModelMux 日志 ────────────────────────────────────── */
+/* ── Mergence 日志 ────────────────────────────────────── */
 
 let logs = [];
 let logSeq = 0;
@@ -1504,8 +1583,7 @@ function bind() {
       if (card) channelAction(card.dataset.name, 'toggle', card);
     });
   });
-  $('btnAddApi').onclick = () => openChannelForm(null, 'embedded');
-  $('btnAddAcct').onclick = () => openChannelForm(null, 'managed');
+  // 「添加渠道」的入口只剩侧栏那个「添加平台」视图，这里不再有按钮要绑。
 
   // 概览指标
   $('btnMetricsReload').onclick = () => loadMetrics(true);
@@ -1534,13 +1612,23 @@ function bind() {
   $('btnCloseDrawer').onclick = () => { $('drawer').hidden = true; };
   // zcode 账号面板的四个弹窗也走同一套「点遮罩 / ESC 关闭」——
   // 不在这里登记的话它们关不掉，用户只能刷新页面。
-  ['chModal', 'trModal', 'addModal', 'zcAccModal', 'zcClaimModal', 'zcImportModal', 'zcSetModal'].forEach((id) => {
+  // chModal 是例外：它挂在视图里当内联面板，关闭必须走 unmountChannelForm，
+  // 才能同时撤销 .inline 与 .chsplit.editing。只设 hidden 的话，面板会
+  // 继续占用槽位、显示在渠道列表正下方（.inline 的 display 压过 [hidden]）。
+  ['trModal', 'addModal', 'zcAccModal', 'zcClaimModal', 'zcImportModal', 'zcSetModal'].forEach((id) => {
     $(id).addEventListener('click', (ev) => { if (ev.target === $(id)) $(id).hidden = true; });
+  });
+  // 「添加平台」里没有遮罩可点也没层可关：那张表单就是页面本体，
+  // 收掉它只会留下一个空视图。所以两条习惯路径在 add 视图里都不收表单。
+  const dismissableForm = () => Store.get().view !== 'add';
+  $('chModal').addEventListener('click', (ev) => {
+    if (ev.target === $('chModal') && dismissableForm()) unmountChannelForm();
   });
   document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
-    ['chModal', 'trModal', 'addModal', 'drawer', 'zcAccModal', 'zcClaimModal', 'zcImportModal', 'zcSetModal']
+    ['trModal', 'addModal', 'drawer', 'zcAccModal', 'zcClaimModal', 'zcImportModal', 'zcSetModal']
       .forEach((id) => { $(id).hidden = true; });
+    if (dismissableForm()) unmountChannelForm();
   });
 
   ['fLevel', 'fProv', 'fQ'].forEach((id) => {

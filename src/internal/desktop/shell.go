@@ -10,14 +10,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"unsafe"
 
 	webview2 "github.com/jchv/go-webview2"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
+	"mergence/internal/config"
+	"mergence/internal/logging"
 )
 
 // defaultBrowserArgs WebView2 兜底 Chromium 参数。
@@ -28,10 +27,12 @@ import (
 const defaultBrowserArgs = "--no-sandbox --disable-gpu"
 
 // Shell WebView2 窗口。
+//
+// 不存窗口标题：标题只在创建 webview2 时用一次（见 NewShell 的 Options），
+// 之后没有任何读取方，留字段就是留死状态。
 type Shell struct {
-	lg    *logging.Logger
-	view  webview2.WebView
-	title string
+	lg   *logging.Logger
+	view webview2.WebView
 }
 
 // EnsureBrowserArgs 在用户未显式设置时注入兜底参数。
@@ -66,7 +67,7 @@ func NewShell(lg *logging.Logger, title, dataPath string, wantW, wantH uint) (*S
 	if view == nil {
 		return nil, fmt.Errorf("无法初始化 WebView2 窗口（请确认已安装 Microsoft Edge WebView2 运行时）")
 	}
-	s := &Shell{lg: lg, view: view, title: title}
+	s := &Shell{lg: lg, view: view}
 	s.applyLayout(wantW, wantH)
 	s.applyIcon()
 	return s, nil
@@ -74,9 +75,6 @@ func NewShell(lg *logging.Logger, title, dataPath string, wantW, wantH uint) (*S
 
 // View 暴露底层 webview，供生命周期管理使用。
 func (s *Shell) View() webview2.WebView { return s.view }
-
-// Title 窗口标题。
-func (s *Shell) Title() string { return s.title }
 
 // Navigate 打开面板。
 func (s *Shell) Navigate(url string) {
@@ -226,9 +224,4 @@ func WebviewDataPath(home string) string {
 		return ""
 	}
 	return p
-}
-
-// ParsePort 把 ports.json 里的端口转成 base_url，供面板与托盘菜单复制。
-func ParsePort(port int) string {
-	return "http://127.0.0.1:" + strconv.Itoa(port)
 }

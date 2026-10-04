@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/identity"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/identity"
 )
 
 // ── 测试用假上游 ────────────────────────────────────────────

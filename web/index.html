@@ -8,7 +8,7 @@
      同步加载（无 defer/async）才能保证它在首次绘制前跑完。 -->
 <script src="/theme.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ModelMux</title>
+<title>Mergence</title>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -19,7 +19,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <span class="logo"></span>
-      <div><div class="name">ModelMux</div><div class="sub" id="navSub">连接中…</div></div>
+      <div><div class="name">Mergence</div><div class="sub" id="navSub">连接中…</div></div>
     </div>
 
     <nav class="nav" id="nav">
@@ -33,6 +33,11 @@
         <div class="nav-sec-bd">
           <a class="nav-i" data-view="api"><i>◇</i><span>API 型平台</span></a>
           <a class="nav-i" data-view="acct"><i>▣</i><span>积分型平台</span></a>
+          <!-- 「添加平台」单独占一个视图，而不是两个渠道视图各挂一个按钮。
+               各挂一个的时候，按钮已经替你选好类型（添加 API 平台 / 添加积分型
+               平台），进表单第一项却又是「渠道类型」二选一 —— 同一件事被问两遍。
+               现在类型只在这里选一次，渠道视图退化成只读列表。 -->
+          <a class="nav-i" data-view="add"><i>＋</i><span>添加平台</span></a>
         </div>
       </div>
 
@@ -53,7 +58,7 @@
       <div class="nav-sec" data-sec="ops">
         <button class="nav-sec-hd" data-sec-toggle="ops"><span>运维</span><i class="caret">▾</i></button>
         <div class="nav-sec-bd">
-          <a class="nav-i" data-view="logs"><i>≣</i><span>ModelMux 日志</span></a>
+          <a class="nav-i" data-view="logs"><i>≣</i><span>Mergence 日志</span></a>
         </div>
       </div>
 
@@ -118,13 +123,12 @@
         </section>
       </section>
 
-      <!-- API 型平台：左列是平台小面板，右列是编辑大面板（点小面板展开） -->
+      <!-- API 型平台：纯列表 + 内联编辑面板（点小面板展开，编辑仍在原位） -->
       <section class="view" id="view-api" hidden>
         <div class="chsplit" id="apiSplit">
           <section class="card">
             <div class="card-hd"><h2>API 型平台</h2>
-              <span class="hint">填 Key 直连 OpenAI 兼容端点，进程内转发</span>
-              <div class="filters"><button class="primary" id="btnAddApi">添加 API 平台</button></div></div>
+              <span class="hint">填 Key 直连 OpenAI 兼容端点，进程内转发</span></div>
             <div class="chlist" id="apiList"></div>
           </section>
           <section class="ch-editor" id="apiEditor"></section>
@@ -136,13 +140,20 @@
         <div class="chsplit" id="acctSplit">
           <section class="card">
             <div class="card-hd"><h2>积分型平台</h2>
-              <span class="hint">账号托管为独立子进程；账号在这里管理，无需密钥</span>
-              <div class="filters"><button class="primary" id="btnAddAcct">添加积分型平台</button></div></div>
+              <span class="hint">账号托管为独立子进程；账号在这里管理，无需密钥</span></div>
             <div class="fhint" id="acctHiddenNote" hidden></div>
             <div class="chlist" id="acctList"></div>
           </section>
           <section class="ch-editor" id="acctEditor"></section>
         </div>
+      </section>
+
+      <!-- 添加平台：新建渠道的**唯一**入口（侧栏「渠道」分组里的第三项）。
+           整页就是这个表单，所以没有「关闭」按钮——那只会把当前页面弄空；
+           要离开就点别的视图。表单 DOM（#chModal）由 app.js 挂进来，
+           与两个渠道视图共用同一份单例（字段几十个，复制两份必然不同步）。 -->
+      <section class="view" id="view-add" hidden>
+        <div class="ch-editor" id="addEditor"></div>
       </section>
 
       <!-- 上游：账号池 -->
@@ -680,7 +691,7 @@
         </section>
       </section>
 
-      <!-- 上游：zcode2api 网关设置（在 ModelMux 内直接改，不必再去网关自己的面板） -->
+      <!-- 上游：zcode2api 网关设置（在 Mergence 内直接改，不必再去网关自己的面板） -->
       <section class="view" id="view-up-zc-settings" hidden>
         <section class="card">
           <div class="card-hd"><h2>网关设置</h2><span class="hint" id="zcSetHint">-</span>
@@ -693,10 +704,10 @@
         </section>
       </section>
 
-      <!-- ModelMux 日志 -->
+      <!-- Mergence 日志 -->
       <section class="view" id="view-logs" hidden>
         <section class="card">
-          <div class="card-hd"><h2>ModelMux 运行日志</h2>
+          <div class="card-hd"><h2>Mergence 运行日志</h2>
             <div class="filters">
               <select id="fLevel"><option value="debug">全部</option>
                 <option value="info" selected>信息及以上</option>
@@ -1076,12 +1087,12 @@
   </div>
 </div>
 
-<!-- zcode 网关设置：在 ModelMux 里直接改，不必再去网关自己的面板。
+<!-- zcode 网关设置：在 Mergence 里直接改，不必再去网关自己的面板。
      两个密钥字段都不回填掩码（留空 = 不改）——上游对含 … 的值会跳过，
      但「靠上游猜意图」不如前端干脆不发这个字段，省掉「掩码当新值提交」的歧义。
      后台密码是「一改两处」：网关侧 store 的 admin_key（/admin/api 的鉴权凭据）
      与本机 config.Claim.AdminKey（内置面板注入 Bearer + 定时领取自报凭据）。
-     所以它不走面板代理，而是走 ModelMux 原生接口 POST /api/channels/admin-key，
+     所以它不走面板代理，而是走 Mergence 原生接口 POST /api/channels/admin-key，
      由服务端一次改到位；只改一边的后果是内置面板整块 401、定时领取静默失效。 -->
 <div class="modal" id="zcSetModal" hidden>
   <div class="modal-box">
@@ -1108,7 +1119,7 @@
       </div>
       <div class="field"><label>套餐自动领取轮 <span class="opt">秒，0 = 关闭</span></label>
         <input id="zcSetClaim" type="number" min="0" step="1">
-        <div class="fhint">这是网关侧自己的定时领取。ModelMux 侧的「限时套餐自动领取」是另一处
+        <div class="fhint">这是网关侧自己的定时领取。Mergence 侧的「限时套餐自动领取」是另一处
           （在「设置」里），两者别设成同一时刻，否则会互相抢额度。</div></div>
     </div>
     <div class="modal-ft">

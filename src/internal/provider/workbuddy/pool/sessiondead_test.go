@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // TestNoteSessionDeadThresholdNotReached 前 2 次连续 12153 不 Disable（误判防护）。

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/provider/trae/pool"
+	"mergence/internal/provider/trae/pool"
 )
 
 //go:embed admin.html

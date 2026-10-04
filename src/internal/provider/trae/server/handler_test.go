@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/trae/auth"
-	"modelmux/internal/provider/trae/pool"
-	"modelmux/internal/provider/trae/upstream"
+	"mergence/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/pool"
+	"mergence/internal/provider/trae/upstream"
 )
 
 // 模拟 SOLO SSE 响应（glm-5.2 回答"你好"）。

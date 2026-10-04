@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/models"
 )
 
 // itoa 写 meta 表用：设置项在 settings 里是 int64，落库统一成十进制字符串。

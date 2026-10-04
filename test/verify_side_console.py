@@ -62,8 +62,9 @@ def main():
         # 改名时漏一处就会出现两套叫法，用户分不清是不是同一类东西。
         navs = js("[...document.querySelectorAll('#nav .nav-sec-bd .nav-i span')]"
                   ".map(x=>x.textContent.trim())")
-        check("侧栏分类名为「API 型平台 / 积分型平台」",
-              isinstance(navs, list) and "API 型平台" in navs and "积分型平台" in navs, navs)
+        check("侧栏分类名为「API 型平台 / 积分型平台」，另有「添加平台」入口",
+              isinstance(navs, list) and "API 型平台" in navs and "积分型平台" in navs
+              and "添加平台" in navs, navs)
 
         def ttlOf(view):
             js("setView('" + view + "')")
@@ -72,11 +73,16 @@ def main():
 
         check("「API 型平台」视图标题正确", ttlOf('api') == "API 型平台", ttlOf('api'))
         check("「积分型平台」视图标题正确", ttlOf('acct') == "积分型平台", ttlOf('acct'))
-        check("新增按钮跟随新名（添加 API 平台 / 添加积分型平台）",
-              js("document.getElementById('btnAddApi').textContent.trim()") == "添加 API 平台"
-              and js("document.getElementById('btnAddAcct').textContent.trim()") == "添加积分型平台",
-              js("document.getElementById('btnAddApi').textContent + ' | ' "
-                 "+ document.getElementById('btnAddAcct').textContent"))
+        check("「添加平台」是侧栏独立视图（标题正确）", ttlOf('add') == "添加平台", ttlOf('add'))
+        # 新增渠道的入口统一收进那个视图。原先两个渠道视图各挂一个按钮
+        # （添加 API 平台 / 添加积分型平台）—— 按钮已经替你选好类型，
+        # 而表单第一项又是「渠道类型」二选一，同一件事被问两遍。
+        check("新增入口收进侧栏「添加平台」（渠道视图里不再各挂一个按钮）",
+              js("document.querySelector('#nav .nav-i[data-view=add] span').textContent.trim()") == "添加平台"
+              and not js("!!document.getElementById('btnAddApi')")
+              and not js("!!document.getElementById('btnAddAcct')"),
+              js("document.querySelector('#nav .nav-i[data-view=add] span')"
+                 "&&document.querySelector('#nav .nav-i[data-view=add] span').textContent"))
         # 概览「渠道概况」卡上的分类徽标用短名：积分型 / API 型。
         # 注意渠道列表的卡片不标分类——本身就在对应分类视图里，标了是冗余，
         # 所以这里查的是 #chCards 而不是 #acctList。
@@ -285,8 +291,8 @@ def main():
               js("!!document.querySelector('#upGroup .nav-sec-hd.static')")
               and not js("document.querySelector('#upGroup [data-sec-toggle]')")
               and not js("document.querySelector('#upGroup .caret')"), "")
-        # 逐个视图切过去：入口必须始终在（含概览、API 型平台、运维里的视图）
-        for v in ("overview", "api", "settings", "logs"):
+        # 逐个视图切过去：入口必须始终在（含概览、渠道类视图、运维里的视图）
+        for v in ("overview", "api", "add", "settings", "logs"):
             js("setView('" + v + "')")
             time.sleep(0.9)
             vis = (not js("document.getElementById('upGroup').hidden")) \

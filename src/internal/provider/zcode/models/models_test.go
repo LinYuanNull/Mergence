@@ -5,16 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
 )
-
-// probeString 复现 A2 采样时用的可复现输入：`abcdefghij` 重复后按长度截断。
-// 这样 observations.md #6/#7 里给出的样例才能被逐字复算。
-func probeString(n int) string {
-	base := strings.Repeat("abcdefghij", (n/10)+1)
-	return base[:n]
-}
 
 // TestSlugRules 对齐 observations.md #3 的每一条实测样例。
 func TestSlugRules(t *testing.T) {

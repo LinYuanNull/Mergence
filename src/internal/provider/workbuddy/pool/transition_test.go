@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // 状态机迁移正交性测试：聚焦 transition.go 收敛出的「单一权威状态机」语义。

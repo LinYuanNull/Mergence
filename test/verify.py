@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""ModelMux P3 端到端验证。
+"""Mergence P3 端到端验证。
 
 不依赖任何真实上游：本地起一个假上游，覆盖 OpenAI Chat（含 SSE）与
 Anthropic Messages（含 SSE）两种形态。
 
-被测对象是**无界面模式**下的真实 ModelMux.exe —— 走的是完整启动路径
+被测对象是**无界面模式**下的真实 Mergence.exe —— 走的是完整启动路径
 （配置加载 → 渠道注册 → 内置服务 → 对外出口），只是不建窗口。
 """
 import json
@@ -21,13 +21,13 @@ import urllib.request
 # 项目根：由本文件位置推导（test/ 的上一层），不写死本机绝对路径。
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = os.path.join(ROOT, "test", "home")
-EXE = os.path.join(ROOT, "ModelMux.exe")
+EXE = os.path.join(ROOT, "Mergence.exe")
 FAKE = os.path.join(ROOT, "test", "fake_upstream.py")
 FAKE_MG = os.path.join(ROOT, "test", "fake_managed_gateway.py")
 E2E = os.path.join(ROOT, "test")
 MG_PIDFILE = os.path.join(E2E, "mg.pid")
-# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MODELMUX_PY 覆盖）。
-PY = os.environ.get("MODELMUX_PY", sys.executable)
+# 用当前解释器；换机器/换 Python 位置不必改代码（可用 MERGENCE_PY 覆盖）。
+PY = os.environ.get("MERGENCE_PY", sys.executable)
 FAKE_PORT = 18091
 FAKE_ZCODE_PORT = 18101   # 假 zcode2api 网关（领取接口契约）
 ZCODE_ADMIN_KEY = "fake-admin-key-123"
@@ -101,14 +101,14 @@ def main():
         time.sleep(1.0)
 
         env = dict(os.environ)
-        env["MODELMUX_HOME"] = HOME
-        env["MODELMUX_HEADLESS"] = "1"
+        env["MERGENCE_HOME"] = HOME
+        env["MERGENCE_HEADLESS"] = "1"
         env["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--no-sandbox"
         mm = subprocess.Popen([EXE], env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         # ── 从日志里取内置服务端口（动态端口，无法预设）
-        log = os.path.join(HOME, "data", "logs", "modelmux.log")
+        log = os.path.join(HOME, "data", "logs", "mergence.log")
         port, deadline = None, time.time() + 25
         while time.time() < deadline:
             if os.path.isfile(log):
@@ -125,7 +125,7 @@ def main():
                 if port:
                     break
             if mm.poll() is not None:
-                print("ModelMux 提前退出，退出码", mm.returncode)
+                print("Mergence 提前退出，退出码", mm.returncode)
                 print(txt[-2000:] if txt else "(无日志)")
                 return 1
             time.sleep(0.3)
@@ -179,7 +179,7 @@ def main():
               f"{st} {len(d.get('presets', []))} 个")
 
         st, d = req("GET", base + "/", raw=True)
-        check("面板首页返回 HTML", st == 200 and "<title>ModelMux</title>" in d)
+        check("面板首页返回 HTML", st == 200 and "<title>Mergence</title>" in d)
         st, js = req("GET", base + "/app.js", raw=True)
         check("面板脚本可加载", st == 200 and "loadChannels" in js)
         st, css = req("GET", base + "/app.css", raw=True)
@@ -337,7 +337,7 @@ def main():
               and d.get("choices", [{}])[0].get("message", {}).get("content") == "echo:fake-alpha"
               and d.get("x_vendor_extra") == {"nested": [1, 2, 3]}
               and d.get("usage", {}).get("total_tokens") == 107
-              # 缓存明细必须原样透传：ModelMux 不该改写 usage 的任何字段
+              # 缓存明细必须原样透传：Mergence 不该改写 usage 的任何字段
               and d.get("usage", {}).get("prompt_tokens_details", {}).get("cached_tokens") == 40)
         check("chat 直通（模型名改写 + 上游非标准字段保真）", ok,
               f"{st} {json.dumps(d, ensure_ascii=False)[:400]}")
@@ -467,7 +467,7 @@ def main():
               f"{st} {d}")
 
         # ── 18) 配置确实落盘
-        cfg = json.load(open(os.path.join(HOME, "config", "modelmux.json"), encoding="utf-8"))
+        cfg = json.load(open(os.path.join(HOME, "config", "mergence.json"), encoding="utf-8"))
         names = sorted(c["name"] for c in cfg.get("embedded_providers", []))
         check("配置原子落盘且内容正确",
               cfg.get("version") == 3 and chat_name in names and anth_name in names,

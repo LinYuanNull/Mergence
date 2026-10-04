@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
+	"mergence/internal/config"
+	"mergence/internal/logging"
 )
 
 func testLogger(t *testing.T) *logging.Logger {

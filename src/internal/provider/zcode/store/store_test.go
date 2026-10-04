@@ -26,16 +26,16 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/settings"
-	"modelmux/internal/provider/zcode/store"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/settings"
+	"mergence/internal/provider/zcode/store"
 )
 
 // fixtureDir 契约夹具（靶机写出的 accounts.db 与原始响应体）。
 //
 // 搬迁自 zcode2api-go 的 docs/contract/store/fixtures；放进本包的 testdata/
-// 是为了让契约证据跟着消费它的代码走 —— ModelMux 里没有全局的 docs/contract，
+// 是为了让契约证据跟着消费它的代码走 —— Mergence 里没有全局的 docs/contract，
 // 散在外面的夹具一改路径就静默失效（测试会因读不到文件而报错，但更糟的是
 // 有人可能改成「文件不存在就跳过」）。相关推导见 ../contract/observations.md。
 const fixtureDir = "testdata"

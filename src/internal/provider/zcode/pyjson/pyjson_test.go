@@ -3,7 +3,7 @@ package pyjson_test
 import (
 	"testing"
 
-	"modelmux/internal/provider/zcode/pyjson"
+	"mergence/internal/provider/zcode/pyjson"
 )
 
 // 数字规范化表：**期望值全部来自 CPython 复算**（`json.dumps(json.loads(x))`），

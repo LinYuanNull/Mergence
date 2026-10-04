@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""对**正在运行**的 ModelMux 面板截图（不改它的状态）。
+"""对**正在运行**的 Mergence 面板截图（不改它的状态）。
 
 用法：python panel_shot.py <port> <outdir>
 通过 Edge headless + CDP 打开面板、切到「渠道」页签后截图。

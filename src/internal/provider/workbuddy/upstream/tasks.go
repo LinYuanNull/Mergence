@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 // growth 域任务路径（与 scripts/task_common.py 对齐）。

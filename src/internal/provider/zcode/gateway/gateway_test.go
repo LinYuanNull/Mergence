@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/store"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/store"
 )
 
 // 本文件走**完整 HTTP 链路**（httptest 起 Gateway + 假上游），

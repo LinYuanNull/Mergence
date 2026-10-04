@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/provider"
+	"mergence/internal/config"
+	"mergence/internal/provider"
 )
 
 // zcode 面板代理的适配测试。

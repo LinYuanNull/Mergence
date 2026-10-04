@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/logging"
-	"modelmux/internal/metrics"
-	"modelmux/internal/provider"
+	"mergence/internal/logging"
+	"mergence/internal/metrics"
+	"mergence/internal/provider"
 )
 
 // maxChatBody 请求体上限。长上下文对话可能很大，放宽到 32MB。
@@ -65,7 +65,7 @@ func (s *Server) handleV1Chat(w http.ResponseWriter, r *http.Request) {
 	if reqID == "" {
 		reqID = logging.NewReqID()
 	}
-	// 回显链路 ID：客户端拿这个值就能在自己的日志里对上 ModelMux 的请求链路
+	// 回显链路 ID：客户端拿这个值就能在自己的日志里对上 Mergence 的请求链路
 	w.Header().Set("X-Request-Id", reqID)
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxChatBody))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """假 zcode2api 网关：复刻 dengyie/zcode2api 的管理接口契约。
 
-与原版（只读探活 + 领取）相比，这里补齐了「账号面板整块搬进 ModelMux」
+与原版（只读探活 + 领取）相比，这里补齐了「账号面板整块搬进 Mergence」
 所需要的那批写接口，并在内存里维护账号池——写操作必须能被随后的
 GET /admin/api/accounts 读回，否则「点保存返回 200 但列表没变」这类 bug
 在端到端里根本看不出来。
@@ -33,10 +33,10 @@ GET /admin/api/accounts 读回，否则「点保存返回 200 但列表没变」
     「安静地一个都不删」（deleted:0），而不是报错；
   * GET /login/poll 对未知 flow 返回 status=expired，不是 404；
   * 领取回执的字段名是 account_id/account_name/ok/plan_name/message/next_at，
-    1005「名额用完」时带 next_at——ModelMux 要原样透传给用户看。
+    1005「名额用完」时带 next_at——Mergence 要原样透传给用户看。
 
 用法：python fake_zcode.py [port] [--fail-code 1005] [--no-auth]
-若设置了环境变量 ZCODE_PORT 则以它为准（托管场景，ModelMux 注入的）。
+若设置了环境变量 ZCODE_PORT 则以它为准（托管场景，Mergence 注入的）。
 """
 import json
 import os
@@ -509,7 +509,7 @@ class H(BaseHTTPRequestHandler):
 def main():
     global PORT, FAIL_CODE, NO_AUTH
     # 端口优先取环境变量 ZCODE_PORT——这正是 zcode2api 自己的约定，
-    # 也是 ModelMux 托管时注入的那个变量。命令行参数只用于手动起（自测）。
+    # 也是 Mergence 托管时注入的那个变量。命令行参数只用于手动起（自测）。
     env_port = os.environ.get("ZCODE_PORT", "").strip()
     if env_port:
         PORT = int(env_port)

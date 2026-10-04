@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"modelmux/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/constants"
 )
 
 // ExtraField 保存 `data` 里本实现不认识的键，用于「上游加字段不被抹掉」。

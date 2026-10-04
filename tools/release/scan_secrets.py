@@ -48,7 +48,7 @@ PATH_PATTERNS = [
 ALLOW = {
     "docs/zcode-native-port-plan.md": ["workdir_abs", "user_home"],
     "docs/CHANGELOG.md": ["workdir_abs", "user_home"],
-    "docs/ModelMux-设计方案.md": ["workdir_abs", "user_home"],
+    "docs/Mergence-设计方案.md": ["workdir_abs", "user_home"],
     "src/THIRD-PARTY-LICENSES/README.md": ["workdir_abs", "user_home"],
     "README.md": ["workdir_abs", "user_home"],
     # zcode 的契约证据（Track 3 随包落位）：observations.md 逐条记录采样方法与

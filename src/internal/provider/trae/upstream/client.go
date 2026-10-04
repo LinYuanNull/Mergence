@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"modelmux/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/auth"
 )
 
 // ErrKind 错误分类，pool 据此决定冷却时长（SPEC §4.3）。

@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 """zcode 账号面板端到端验证：真界面 + 真代理 + **有状态**的假网关。
 
-为什么必须有状态：把 zcode 账号面板整块搬进 ModelMux，价值就在「能在本面板
+为什么必须有状态：把 zcode 账号面板整块搬进 Mergence，价值就在「能在本面板
 里增删改」——只读渲染是搬进来之前就有的能力。假网关若每次吐同一份硬编码列表，
 「保存返回 200 但列表没变」这类 bug 就测不出来。所以 test/fake_zcode.py 维护了
 一份内存账号池，写操作必须能被随后的 GET /admin/api/accounts 读回。
 
 链路（每一步都是真实 HTTP，断言读的是**渲染后的 DOM 文本**，不是 innerHTML 字符串）：
-    Edge(headless) → ModelMux 面板 → /api/channels/<chan>/upstream/*
-                   → ModelMux 服务端注入后台密码 → 假 zcode2api 的 /admin/api/*
+    Edge(headless) → Mergence 面板 → /api/channels/<chan>/upstream/*
+                   → Mergence 服务端注入后台密码 → 假 zcode2api 的 /admin/api/*
 
 覆盖：账号渲染 / 导出（含下载文件字节）/ 领取预览+领取 / 新增 / 编辑改名 /
       启停 / 全量刷新 / 导入 / 删除（确认框）/ 设备码登录轮询到成功。
@@ -35,11 +35,11 @@ from drive_ui import EDGE, WS, wait_json  # noqa: E402
 
 ROOT = os.path.dirname(HERE)
 HOME = os.path.join(HERE, "zcacc_home")
-# 允许指向别的构建产物（例如仓库根的 ModelMux.exe 正被用户实例占用时，
+# 允许指向别的构建产物（例如仓库根的 Mergence.exe 正被用户实例占用时，
 # 可以先 build 到临时路径再拿来验，不必先杀掉用户正在用的实例）。
-EXE = os.environ.get("MODELMUX_EXE") or os.path.join(ROOT, "ModelMux.exe")
+EXE = os.environ.get("MERGENCE_EXE") or os.path.join(ROOT, "Mergence.exe")
 FAKE_ZCODE = os.path.join(HERE, "fake_zcode.py")
-PY = os.environ.get("MODELMUX_PY", sys.executable)
+PY = os.environ.get("MERGENCE_PY", sys.executable)
 
 ZCODE_PORT = 18103
 ZCODE_ADMIN_KEY = "fake-admin-key-123"
@@ -56,7 +56,7 @@ SEED_TOKENS = {"eyJhbGciOiJI.eyJzdWIiOiJhIn0.sigaaa",
 # 设成 zcode2api-go.exe 的路径即切到 Go 实现（见 zcode2api-go 仓库的 A3）。
 #
 # 切过去后**必然有若干项期望值不同**，这不是回归，是两份上游本就不同：
-#   1. Go 实现从空池启动，而 ModelMux 对 account_count === 0 的渠道整体隐藏 ⇒
+#   1. Go 实现从空池启动，而 Mergence 对 account_count === 0 的渠道整体隐藏 ⇒
 #      必须先经代理灌入账号，侧栏入口才会出现（脚本自动灌，见下）。
 #   2. 账号名由 Go 侧按「提供方-序号」自动生成（zai-1 / zai-2），不是假网关的「账号甲/乙」。
 #   3. 刚灌入的账号上游还没查过额度 ⇒ `quota` 是空对象（与靶机一致），面板渲染「—」。
@@ -64,7 +64,7 @@ SEED_TOKENS = {"eyJhbGciOiJI.eyJzdWIiOiJhIn0.sigaaa",
 #      这些步骤改为断言「显式失败」，而不是跳过：把「我们还不支持」也钉成可观测行为。
 UPSTREAM_EXE = os.environ.get("ZCODE_UPSTREAM_EXE") or ""
 GO_MODE = bool(UPSTREAM_EXE)
-# Go 实现要把上游自带面板目录指过去才有多余能力；ModelMux 走的是自己的面板，
+# Go 实现要把上游自带面板目录指过去才有多余能力；Mergence 走的是自己的面板，
 # 这个值只影响 Go 进程自己能不能提供 /admin/*，留空也能跑。
 PANEL_DIR = os.environ.get("ZCODE_PANEL_DIR") or ""
 
@@ -161,11 +161,11 @@ def main():
     # 固定隔离目录（不用时间戳，便于排查）。只清「会影响断言」的四样东西：
     #   config/                    渠道与设置（否则上一轮的渠道残留）
     #   data/ports.json            端口映射（否则 Reuse 让端口在几轮之间漂移）
-    #   data/logs/modelmux.log     监听日志（否则 wait_port 可能读到上一轮的旧端口）
+    #   data/logs/mergence.log     监听日志（否则 wait_port 可能读到上一轮的旧端口）
     #   downloads/                 上一轮导出的文件（否则会拿旧文件当本轮结果）
     # 整个 HOME 递归删会被沙箱的批量删除保护拦下（跑到一半失败还更糟）；
     # edge-profile 留着反而省一次浏览器冷启动。
-    for rel in ("config", "data/logs/modelmux.log", "data/ports.json", "downloads"):
+    for rel in ("config", "data/logs/mergence.log", "data/ports.json", "downloads"):
         p = os.path.join(HOME, *rel.split("/"))
         if os.path.isdir(p):
             shutil.rmtree(p, ignore_errors=True)
@@ -178,19 +178,19 @@ def main():
     os.makedirs(DL, exist_ok=True)
 
     env = dict(os.environ)
-    env["MODELMUX_HOME"] = HOME
-    env["MODELMUX_HEADLESS"] = "1"
+    env["MERGENCE_HOME"] = HOME
+    env["MERGENCE_HEADLESS"] = "1"
     mm = subprocess.Popen([EXE], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     edge = None
     ws = None
     base = None
     try:
-        port = wait_port(mm, os.path.join(HOME, "data", "logs", "modelmux.log"))
+        port = wait_port(mm, os.path.join(HOME, "data", "logs", "mergence.log"))
         if not port:
-            print("ModelMux 未启动")
+            print("Mergence 未启动")
             return 1
         base = f"http://127.0.0.1:{port}"
-        print("ModelMux 端口", port)
+        print("Mergence 端口", port)
 
         # 上一轮若被沙箱拦下了 rmtree，HOME 里会残留上一轮的渠道配置。先清空，
         # 让脚本在任何残留状态下都从「零渠道」开始（幂等，不靠删目录成功）。
@@ -198,7 +198,7 @@ def main():
         for c in (ch0.get("channels") or []):
             delete(base, "/api/channels?name=" + urllib.parse.quote(c.get("name", "")))
 
-        # ── 托管渠道：ModelMux 拉起上游（默认假 zcode2api；GO_MODE 下换成 Go 实现）
+        # ── 托管渠道：Mergence 拉起上游（默认假 zcode2api；GO_MODE 下换成 Go 实现）
         # 端口由编排器分配并经 port_env_var 注入 ZCODE_PORT —— Go 实现读同名变量。
         if GO_MODE:
             if not os.path.isfile(UPSTREAM_EXE):
@@ -256,7 +256,7 @@ def main():
         upq = "/api/channels/" + urllib.parse.quote(ch_name) + "/upstream"
 
         if GO_MODE:
-            # Go 实现从**空池**启动，而 ModelMux 对 account_count === 0 的托管渠道
+            # Go 实现从**空池**启动，而 Mergence 对 account_count === 0 的托管渠道
             # 按设计整体隐藏（侧栏入口根本不出现）。所以先经面板代理灌入两个账号；
             # 种子用与假网关相同的 JWT，导出断言才能原样沿用。
             st, sd = post(base, upq + "/accounts",
@@ -646,10 +646,10 @@ def main():
         st, d = post(base, "/api/channels/admin-key",
                      {"name": ch_name, "admin_key": new_key}, timeout=60)
         check("后台密码同步接口返回 ok 且声明两处都已同步",
-              st == 200 and d.get("ok") and set(d.get("synced") or []) == {"gateway", "modelmux"},
+              st == 200 and d.get("ok") and set(d.get("synced") or []) == {"gateway", "mergence"},
               f"{st} {d}")
         # 本机侧的直接证据：配置文件里的 claim.admin_key 必须是新值（原子落盘的产物）
-        cfgp = os.path.join(HOME, "config", "modelmux.json")
+        cfgp = os.path.join(HOME, "config", "mergence.json")
         try:
             saved = json.load(open(cfgp, encoding="utf-8"))
         except Exception as e:

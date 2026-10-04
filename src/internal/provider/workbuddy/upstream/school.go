@@ -17,7 +17,7 @@ import (
 	"net/http"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/auth"
 )
 
 const schoolBase = "/portal/activity/school"

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 func TestNormalizeRules(t *testing.T) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""对运行中的 ModelMux 桌面布局截图：侧栏 / 概览 / 渠道 / 上游控制台各视图 / 设置。"""
+"""对运行中的 Mergence 桌面布局截图：侧栏 / 概览 / 渠道 / 上游控制台各视图 / 设置。"""
 import base64
 import json
 import os
@@ -21,7 +21,7 @@ from drive_ui import EDGE  # noqa: E402  共享的浏览器定位
 OUT = os.path.join(_TEST, "shots")
 os.makedirs(OUT, exist_ok=True)
 
-log = os.path.join(os.environ["LOCALAPPDATA"], "ModelMux", "logs", "modelmux.log")
+log = os.path.join(os.environ["LOCALAPPDATA"], "Mergence", "logs", "mergence.log")
 port = None
 for line in open(log, encoding="utf-8", errors="replace"):
     m = re.search(r'"api":"http://127\.0\.0\.1:(\d+)/v1"', line)

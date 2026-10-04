@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/constants"
 )
 
 // probeString 复现 A2 采样时的可复现输入，用于逐字复算 observations.md #6/#7 的样例。

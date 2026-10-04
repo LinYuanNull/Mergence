@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 func at(h, m int) time.Time {

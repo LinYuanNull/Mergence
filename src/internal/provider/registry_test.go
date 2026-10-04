@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/config"
+	"mergence/internal/config"
 )
 
 func newTestRegistry(t *testing.T, ups ...Upstream) *Registry {

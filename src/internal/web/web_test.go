@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/orchestrator"
-	"modelmux/internal/provider"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/orchestrator"
+	"mergence/internal/provider"
 )
 
 // newTestServer 起一个完整的服务（随机端口），返回 server 与 baseURL。
@@ -30,7 +30,7 @@ func newTestServer(t *testing.T, mutate func(*config.Config)) (*Server, string) 
 	// 否则 Windows 上文件句柄未释放，TempDir 清理会失败。
 	t.Cleanup(func() { _ = lg.Close() })
 
-	cfgPath := filepath.Join(t.TempDir(), "modelmux.json")
+	cfgPath := filepath.Join(t.TempDir(), "mergence.json")
 	cfg := config.Default()
 	if mutate != nil {
 		mutate(cfg)

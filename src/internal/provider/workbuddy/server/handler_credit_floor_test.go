@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/upstream"
 )
 
 // TestStatusCreditFloor /status 透出 pool 层的 credit_floor 生效值：

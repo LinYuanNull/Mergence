@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"modelmux/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/constants"
 )
 
 // ErrNotANumber 表示某个设置项的值既不是数字也不是布尔。
@@ -162,12 +162,6 @@ type Patch struct {
 	QuotaRefreshInterval *json.RawMessage
 	AccountConcurrency   *json.RawMessage
 	ClaimRoundInterval   *json.RawMessage
-}
-
-// IsEmpty 报告这次更新是否什么都没改。
-func (p Patch) IsEmpty() bool {
-	return p.AdminKey == nil && p.GatewayKey == nil &&
-		p.QuotaRefreshInterval == nil && p.AccountConcurrency == nil && p.ClaimRoundInterval == nil
 }
 
 // Apply 把 Patch 落到存储上，返回落库后的设置。

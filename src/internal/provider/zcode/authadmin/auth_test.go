@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/zcode/authadmin"
+	"mergence/internal/provider/zcode/authadmin"
 )
 
 func req(remote, auth string) *http.Request {

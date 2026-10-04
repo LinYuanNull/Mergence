@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/trae/auth"
-	"modelmux/internal/provider/trae/pool"
-	"modelmux/internal/provider/trae/upstream"
+	"mergence/internal/provider/trae/auth"
+	"mergence/internal/provider/trae/pool"
+	"mergence/internal/provider/trae/upstream"
 )
 
 func TestNextFire(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/provider/zcode/agent"
-	"modelmux/internal/provider/zcode/oauth"
+	"mergence/internal/provider/zcode/agent"
+	"mergence/internal/provider/zcode/oauth"
 )
 
 // fakeUpstream 记录调用并返回预设结果，用来断言「何时打上游、打了什么」。

@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"modelmux/internal/provider/trae/pool"
-	"modelmux/internal/provider/trae/upstream"
+	"mergence/internal/provider/trae/pool"
+	"mergence/internal/provider/trae/upstream"
 )
 
 // Config handler 依赖。

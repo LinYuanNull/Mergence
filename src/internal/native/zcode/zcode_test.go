@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/native"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/native"
 )
 
 // testLogger 用一个真实 logger（写到临时目录、级别 error）。原生装配会往它写

@@ -11,8 +11,8 @@ import (
 	"log"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/auth"
-	"modelmux/internal/provider/workbuddy/logfmt"
+	"mergence/internal/provider/workbuddy/auth"
+	"mergence/internal/provider/workbuddy/logfmt"
 )
 
 // RunStreakBonusNow 对所有可用账号执行连登兑换 + 抽奖（幂等：locked/无次数自动跳过）。

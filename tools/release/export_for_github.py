@@ -26,9 +26,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 本脚本在 tools/release/ 下，仓库根是 HERE 的上两级。
-SRC = os.path.abspath(os.environ.get("MODELMUX_SRC") or os.path.dirname(os.path.dirname(HERE)))
+SRC = os.path.abspath(os.environ.get("MERGENCE_SRC") or os.path.dirname(os.path.dirname(HERE)))
 DST = os.path.abspath(os.environ.get("GITHUB_EXPORT_DIR")
-                      or os.path.join(os.path.dirname(SRC), "modelmux-github"))
+                      or os.path.join(os.path.dirname(SRC), "mergence-github"))
 INTO = os.environ.get("GITHUB_EXPORT_INTO") == "1"
 NO_PRUNE = os.environ.get("GITHUB_EXPORT_NO_PRUNE") == "1"
 
@@ -44,7 +44,7 @@ DIRS = {
     "test": {".py"},
 }
 
-EXCLUDE_NAMES = {".tmp", "ModelMux.exe", "ModelMux_new.exe~", "_t.exe"}
+EXCLUDE_NAMES = {".tmp", "Mergence.exe", "Mergence_new.exe~", "_t.exe"}
 EXCLUDE_DIRS = {"__pycache__", "home", "gui_home", "ui_home", "claim_home", "shots"}
 
 

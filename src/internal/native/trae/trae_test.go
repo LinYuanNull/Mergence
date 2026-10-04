@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
-	"modelmux/internal/config"
-	"modelmux/internal/logging"
-	"modelmux/internal/native"
+	"mergence/internal/config"
+	"mergence/internal/logging"
+	"mergence/internal/native"
 )
 
 // testLogger 用一个真实 logger（写到临时目录、级别 error）——原生装配会往它写
@@ -263,7 +263,7 @@ func TestCallbackServerDisabledByZeroPort(t *testing.T) {
 // 规则很容易被「顺手改成先读文件」而破坏，后果是：用户在前端渠道设置里改的 Key
 // 不生效（面板代理与数据面都拿旧 Key → 全 401），而配置文件里明明写着对的值。
 //
-//	渠道填了 route.api_key  → 它说了算（ModelMux 是唯一配置源）
+//	渠道填了 route.api_key  → 它说了算（Mergence 是唯一配置源）
 //	渠道没填                → 用实例 config.json 里的（兼容直接复用原目录）
 func TestRouteKeyOverridesFileKey(t *testing.T) {
 	t.Run("渠道填了 Key，覆盖实例配置里的值", func(t *testing.T) {

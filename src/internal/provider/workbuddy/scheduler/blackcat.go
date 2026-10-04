@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"modelmux/internal/provider/workbuddy/logfmt"
-	"modelmux/internal/provider/workbuddy/upstream"
+	"mergence/internal/provider/workbuddy/logfmt"
+	"mergence/internal/provider/workbuddy/upstream"
 )
 
 // RunBlackcatNow 对所有可用账号执行夜猫子对话补足（窗口外跳过）。

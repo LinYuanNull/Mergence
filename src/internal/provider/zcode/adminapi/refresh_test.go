@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"modelmux/internal/provider/zcode/constants"
-	"modelmux/internal/provider/zcode/models"
-	"modelmux/internal/provider/zcode/quota"
-	"modelmux/internal/provider/zcode/store"
+	"mergence/internal/provider/zcode/constants"
+	"mergence/internal/provider/zcode/models"
+	"mergence/internal/provider/zcode/quota"
+	"mergence/internal/provider/zcode/store"
 )
 
 // stubRefresher 是注入用的额度刷新器：直接给出要装配的 Result。
