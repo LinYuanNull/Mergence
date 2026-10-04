@@ -30,6 +30,7 @@ MG_PIDFILE = os.path.join(E2E, "mg.pid")
 PY = os.environ.get("MERGENCE_PY", sys.executable)
 FAKE_PORT = 18091
 FAKE_ZCODE_PORT = 18101   # 假 zcode2api 网关（领取接口契约）
+MG_PORT = 18092           # 假通用网关（外部接管：由本测试自己起，Mergence 不拉起）
 ZCODE_ADMIN_KEY = "fake-admin-key-123"
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -85,6 +86,41 @@ def pid_alive(pid):
     return any(f'"{pid}"' in line for line in out.splitlines())
 
 
+def wait_tcp(port, timeout=15):
+    """等某个回环端口能连上（假上游起好了）。"""
+    import socket
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.2)
+    return False
+
+
+def start_fake(cmd, port, env_extra=None, timeout=15):
+    """起一个假上游并等它就绪。
+
+    独立子进程模式移除后，托管渠道改走「外部接管」：假上游由**测试自己**起成
+    独立服务（和用户自己部署一套网关的情形一致），再用 MERGENCE_EXTERNAL_URL
+    把它接进 Mergence。所以测试要负责它的生命周期。
+    """
+    env = dict(os.environ)
+    if env_extra:
+        env.update(env_extra)
+    p = subprocess.Popen(cmd, env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not wait_tcp(port, timeout):
+        raise RuntimeError(f"假上游未在 {timeout}s 内监听 {port}：{cmd}")
+    return p
+
+
+def external_env(port):
+    """构造「外部接管」渠道的 env：告诉 Mergence 上游已经在哪。"""
+    return {"MERGENCE_EXTERNAL_URL": f"http://127.0.0.1:{port}"}
+
+
 def main():
     # ── 准备干净的隔离数据目录
     if os.path.isdir(HOME):
@@ -96,6 +132,12 @@ def main():
     fake_zcode = subprocess.Popen([PY, os.path.join(E2E, "fake_zcode.py"),
                                    str(FAKE_ZCODE_PORT)],
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # 假通用网关：外部接管用，测试自己起、自己收（Mergence 不拉它）。
+    if os.path.exists(MG_PIDFILE):
+        os.remove(MG_PIDFILE)
+    fake_mg = start_fake([PY, FAKE_MG], MG_PORT,
+                         env_extra={"PORT": str(MG_PORT), "MG_PIDFILE": MG_PIDFILE})
+    mg_pid = open(MG_PIDFILE, encoding="utf-8").read().strip() if os.path.exists(MG_PIDFILE) else ""
     mm = None
     try:
         time.sleep(1.0)
@@ -596,23 +638,20 @@ def main():
         check("转发日志带 req_id（可串链路）", has_reqid,
               json.dumps(d.get("entries", [])[:1], ensure_ascii=False))
 
-        # ── 21) 托管型渠道：完整的子进程生命周期
-        if os.path.exists(MG_PIDFILE):
-            os.remove(MG_PIDFILE)
+        # ── 21) 托管型渠道：外部接管一个已在运行的网关（独立子进程模式已移除）
         mg = {
             "kind": "managed", "name": "", "display_name": "FakeManaged",
-            "preset": "custom-managed", "enabled": True,
-            "command": PY, "args": [FAKE_MG], "dir": E2E,
-            "port_env_var": "PORT", "health_path": "/healthz",
-            "panel_path": "/panel/", "ready_timeout": "40s",
+            "gateway_kind": "workbuddy", "enabled": True,
+            "health_path": "/healthz",
+            "panel_path": "/panel/",
             "expose": True, "protocol": "chat",
             "model_prefix": "mg", "api_keys": ["1234"],
             "models": ["wb-alpha", "wb-beta"], "weight": 1,
-            "env": {"MG_PIDFILE": MG_PIDFILE},
+            "env": external_env(MG_PORT),
         }
         st, d = req("POST", base + "/api/channels", mg, timeout=120)
         mg_name = d.get("name", "")
-        check("保存托管型渠道并拉起子进程",
+        check("保存托管型渠道（外部接管）",
               st == 200 and d.get("ok") and not d.get("start_error"),
               f"{st} start_error={d.get('start_error')}")
 
@@ -624,15 +663,13 @@ def main():
                 ready, mg_url = True, c.get("base_url", "")
                 break
             time.sleep(0.5)
-        check("托管型渠道就绪（动态端口已下发给子进程）", ready,
+        check("托管型渠道就绪（外部网关已接入）", ready,
               f"轮询 80 次仍未就绪；url={mg_url}")
-        print(f"      子进程地址 = {mg_url}")
+        print(f"      外部网关地址 = {mg_url}")
 
-        pid = ""
-        if os.path.exists(MG_PIDFILE):
-            pid = open(MG_PIDFILE, encoding="utf-8").read().strip()
-        check("子进程确实是独立进程（写回 PID）", bool(pid) and pid_alive(pid), f"pid={pid}")
-        print(f"      子进程 pid = {pid}")
+        check("被接管的外部进程仍在运行（测试自己起的）",
+              bool(mg_pid) and pid_alive(mg_pid), f"pid={mg_pid}")
+        print(f"      外部网关 pid = {mg_pid}")
 
         # 旧写法（前缀带斜杠）必须仍能路由，否则升级即 404
         st_old, d_old = req("POST", base + "/v1/chat/completions",
@@ -726,14 +763,19 @@ def main():
         st, d = req("POST", base + "/api/channels/toggle",
                     {"name": mg_name, "enabled": False}, timeout=60)
         check("停用托管型渠道", st == 200 and d.get("ok") is True, f"{st} {d}")
-        gone = False
+        unready = False
         for _ in range(30):
-            if pid_alive(pid):
-                time.sleep(0.4)
-            else:
-                gone = True
+            st2, d2 = req("GET", cbase + "/api/channels")
+            c = next((x for x in d2.get("channels", []) if x["name"] == mg_name), None)
+            if c and not c.get("ready"):
+                unready = True
                 break
-        check("停用后子进程真的结束了（不是只改了个标志位）", gone, f"pid {pid} 仍在运行")
+            time.sleep(0.4)
+        check("停用后渠道不再就绪（Mergence 已断开代理）", unready,
+              "停用后渠道仍报 ready")
+        # 外部网关归测试所有：Mergence 停用只是断开代理，不去动它。
+        check("停用不杀外部进程（它不归 Mergence 管）",
+              bool(mg_pid) and pid_alive(mg_pid), f"pid={mg_pid}")
 
         st, d = req("GET", base + "/v1/models")
         ids = [m["id"] for m in d.get("data", [])]
@@ -766,15 +808,18 @@ def main():
         st, d = req("POST", base + "/v1/chat/completions", {"model": "mg/wb-alpha", "messages": []})
         check("重启后仍能转发（端口回收无冲突）", st == 200, f"{st} {d}")
 
-        # 启动失败：配置要保存，同时明确报告原因（而不是静默失败）
+        # 接管失败：外部地址打不通时要明确报告（而不是静默失败）
+        # 用 trae 这个当前没有实例的网关种类：同一个平台只允许一个实例，
+        # 复用 workbuddy 会被「平台唯一性」挡成 409，测不到接管失败这条路径。
         st, d = req("POST", base + "/api/channels", {
-            "kind": "managed", "name": "", "display_name": "BadCmd", "enabled": True,
-            "command": "definitely-not-a-real-binary-xyz.exe",
-            "port_env_var": "PORT", "expose": True, "model_prefix": "badcmd",
-            "models": ["x"], "protocol": "chat", "ready_timeout": "5s",
+            "kind": "managed", "name": "", "display_name": "BadAdopt", "enabled": True,
+            "gateway_kind": "trae",
+            "expose": True, "model_prefix": "badadopt",
+            "models": ["x"], "protocol": "chat", "health_path": "/healthz",
+            "env": {"MERGENCE_EXTERNAL_URL": "http://127.0.0.1:1"},
         }, timeout=60)
         bad_name = d.get("name", "")
-        check("子进程启动失败时配置仍保存、并明确报告",
+        check("接管失败时配置仍保存、并明确报告",
               st == 200 and bool(d.get("start_error")), f"{st} {d}")
         st, d = req("GET", cbase + "/api/channels")
         c = next((x for x in d.get("channels", []) if x["name"] == bad_name), None)
@@ -785,14 +830,9 @@ def main():
 
         st, d = req("DELETE", base + f"/api/channels?name={mg_name}", timeout=60)
         check("删除托管型渠道", st == 200, f"{st} {d}")
-        gone = False
-        for _ in range(30):
-            if pid_alive(pid):
-                time.sleep(0.4)
-            else:
-                gone = True
-                break
-        check("删除后子进程已结束", gone, f"pid {pid} 仍在运行")
+        # 删除只解除接管；外部网关仍在（测试自己起的，收尾时才 terminate）。
+        check("删除不杀外部进程（它不归 Mergence 管）",
+              bool(mg_pid) and pid_alive(mg_pid), f"pid={mg_pid}")
 
         # ── 22) 端口热切换：保存后新端口生效、旧端口优雅关闭
         st, d = req("POST", base + "/api/settings/port", {"port": 0}, timeout=60)
@@ -854,9 +894,8 @@ def main():
               st == 200 and (d.get("skipped") or d.get("error")),
               f"{st} {d}")
 
-        # 建一个指向假网关的托管渠道：process_spec 用 python 起一个极简 HTTP 服务，
-        # 这里直接用 python -m http.server 不带 /admin/api/claim，
-        # 因此预期是「领取失败但渠道可选中」——验证错误被如实上报。
+        # 这里没有 zcode 托管渠道，所以上面的手动领取必然走「没有可用渠道」分支。
+        # 真实领取链路（Bearer 鉴权、回执翻译、名额用完）在 verify_claim.py 里验。
         st, d = req("GET", cbase + "/api/channels")
         check("渠道列表可用于自动识别", st == 200 and "channels" in d, str(st))
 
@@ -890,6 +929,7 @@ def main():
             mm.kill()
         fake.terminate()
         fake_zcode.terminate()
+        fake_mg.terminate()
 
     passed = sum(1 for _, ok, _ in results if ok)
     total = len(results)

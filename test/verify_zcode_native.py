@@ -134,7 +134,7 @@ def clean():
     整个 HOME 递归删会被沙箱的批量删除保护拦下（跑到一半失败还更糟），
     所以逐项清固定路径。
     """
-    for rel in ("config", "data/logs/mergence.log", "data/ports.json",
+    for rel in ("config", "data/logs/mergence.log",
                 "data/instances", "data/cache"):
         p = os.path.join(HOME, *rel.split("/"))
         if os.path.isdir(p):

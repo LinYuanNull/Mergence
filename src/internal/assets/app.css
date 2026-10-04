@@ -652,7 +652,6 @@ pre {
 /* 按运行方式显隐的表单项：子进程专有字段（启动命令/端口环境变量…）在
    进程内原生渠道下隐藏。.row2/.row3 是 grid，display 会盖掉 [hidden]
    的默认样式，所以必须显式写这一条。 */
-[data-mode][hidden] { display: none; }
 
 /* ── 上游配置表单 ─────────────────────────────────────── */
 .cfgwrap { max-height: 560px; overflow: auto; padding: 16px 20px; }
@@ -1015,3 +1014,56 @@ pre {
 
 /* 弹窗底部的「正在等待」文案：与 .login-state 同色系，别和错误红混起来 */
 .zc-busy { color: var(--warn); }
+
+/* ── 控制台：所有托管渠道共用一条工具条 + 页签栏 ─────────────────
+   这一条只在控制台（up-*）视图下出现。页签切来切去时它原地不动，
+   所以十个视图用起来像一个；这也是「合并成一个控制台」的全部可见形态。
+   max-width 必须与 .view 对齐（1180px）——否则它比下面的卡片宽出一截，
+   看起来像两个不相干的页面。 */
+.con-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  max-width: 1180px; margin: 0 0 14px;
+}
+.con-head[hidden] { display: none; }
+.con-pick { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--fg-3); }
+.con-pick select {
+  background: var(--surface-3); color: var(--fg-2); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 5px 9px; font-family: var(--sans); font-size: var(--text-sm);
+}
+.con-tabs {
+  display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  background: var(--surface-3); border-radius: var(--r-sm); padding: 2px;
+}
+.con-tabs button {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; color: var(--fg-3); font-size: var(--text-sm);
+  padding: 5px 11px; border-radius: 5px; cursor: pointer; font-family: var(--sans);
+}
+.con-tabs button:hover { color: var(--fg); }
+.con-tabs button.on { background: var(--surface-1); color: var(--fg); }
+.con-tabs button i { font-style: normal; color: var(--fg-3); }
+.con-tabs button.on i { color: var(--accent); }
+/* 没有可接入控制台的渠道（web / none）：页签位置改成一句说明，
+   不留一排假页签——点了 404 的入口比没有入口更糟。 */
+.con-tabs .con-none { padding: 3px 8px; font-size: var(--text-sm); color: var(--fg-3); }
+
+/* 「积分型平台」页顶部的控制台入口区块。
+   用强调色左边线把它与渠道列表分开：它是「入口」而不是「列表」，
+   不做区分时用户会把里面每一行也当成一个渠道来读。 */
+.con-entry {
+  border-left: 2px solid var(--accent); background: var(--surface-3);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0; padding: 9px 12px; margin-bottom: 12px;
+}
+.con-entry[hidden] { display: none; }
+.con-entry .ce-hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 7px; }
+.con-entry .ce-hd > span:first-child { font-weight: 600; font-size: var(--text-sm); }
+.con-entry .dim { color: var(--fg-3); font-size: var(--text-xs); }
+.ce-list { display: flex; flex-direction: column; gap: 5px; }
+.ce-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ce-row .nm { font-weight: 600; font-size: var(--text-sm); }
+.ce-row .dim { color: var(--fg-3); font-size: var(--text-xs); }
+/* 入口区块内的状态点自己一套灰度：渠道列表的 .dot.off 是红色（表示异常），
+   而这里的「已停用」是正常状态，用红色会误导。 */
+.ce-row .ce-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--fg-3); }
+.ce-row .ce-dot.ok { background: var(--ok); }
+.ce-row .ce-dot.warn { background: var(--warn); }

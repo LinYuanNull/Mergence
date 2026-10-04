@@ -1,4 +1,4 @@
-// settings.go 运行中可改的设置：对外监听端口、关窗行为。
+// settings.go 运行中可改的设置：对外监听端口、关窗行为、面板显示偏好。
 //
 // 端口切换的顺序是正确性的关键：
 //
@@ -155,4 +155,43 @@ func (s *Server) handleSettingsClose(w http.ResponseWriter, r *http.Request) {
 		note = "关窗将直接退出应用"
 	}
 	writeJSON(w, map[string]any{"ok": true, "minimize_to_tray": want, "note": note})
+}
+
+// handleSettingsConsole POST /api/settings/console {"acct_console": true|false}。
+//
+// true = 在「积分型平台」页顶部显示「控制台」入口区块（缺省）；false = 收起它。
+//
+// 与 handleSettingsClose 的区别：这里**没有运行期副作用**，所以只需要落盘。
+// 那块界面的显隐完全由前端按 /api/status 里的 acct_console 决定，保存后前端
+// 刷新一次状态即生效，服务端没有需要跟着切换的东西（关窗行为则不同，它是
+// 进程级的，必须额外通知窗口层）。
+func (s *Server) handleSettingsConsole(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		AcctConsole *bool `json:"acct_console"`
+	}
+	if err := readJSONBody(r, 4<<10, &in); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	// 指针同样是必须的：false 是合法取值，用零值判断「没传」会把
+	// 「收起入口」误判成「字段漏传」。
+	if in.AcctConsole == nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{
+			"error": "缺少 acct_console（true = 在「积分型平台」页显示控制台入口，false = 收起）"})
+		return
+	}
+	want := *in.AcctConsole
+	cur := s.currentConfig().UI.AcctConsole
+	if _, _, err := s.saveConfig(func(c *config.Config) { c.UI.AcctConsole = want }); err != nil {
+		writeJSONStatus(w, http.StatusInternalServerError,
+			map[string]any{"error": "保存配置失败：" + err.Error()})
+		return
+	}
+	s.lg.Info("控制台入口显示偏好已更新", "acct_console", want, "changed", want != cur)
+
+	note := "控制台入口在「积分型平台」页顶部显示"
+	if !want {
+		note = "已从「积分型平台」页收起；侧栏「控制台」分组不受影响，可在设置页随时恢复"
+	}
+	writeJSON(w, map[string]any{"ok": true, "acct_console": want, "note": note})
 }

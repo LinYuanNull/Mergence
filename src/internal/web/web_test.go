@@ -36,7 +36,7 @@ func newTestServer(t *testing.T, mutate func(*config.Config)) (*Server, string) 
 		mutate(cfg)
 	}
 	reg := provider.NewRegistry(lg)
-	orch := orchestrator.New(t.TempDir(), lg, nil)
+	orch := orchestrator.New(t.TempDir(), lg)
 	s := New(lg, orch, reg, t.TempDir())
 	s.SetConfig(cfg, cfgPath)
 	port, err := s.Start()
@@ -222,6 +222,67 @@ func TestProxyRejectsNonManagedChannel(t *testing.T) {
 	resp2.Body.Close()
 	if resp2.StatusCode != http.StatusNotFound {
 		t.Errorf("不存在的渠道应 404，得到 %d", resp2.StatusCode)
+	}
+}
+
+// TestAdminKeyAcceptsNativeChannel 原生（进程内）渠道同样有独立网关设置，
+// 改密接口必须接受它。旧判据是 `up.Source != "managed"`，会把所有原生渠道挡成
+// 501 not_managed —— 子进程模式移除后每个托管渠道都是原生型，那等于这个功能
+// 整体失效。判据必须是 Hosted()。
+func TestAdminKeyAcceptsNativeChannel(t *testing.T) {
+	var gotPath, gotAuth atomic.Value
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath.Store(r.URL.Path)
+		gotAuth.Store(r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer up.Close()
+
+	s, base := newTestServer(t, func(c *config.Config) {
+		c.Managed = append(c.Managed, config.ManagedProvider{
+			Name: "zc", DisplayName: "zc", Enabled: true,
+			// Mode=native ⇒ FromManaged 产出的 Source 就是 SourceNative。
+			Kind: "zcode", Mode: config.ModeNative,
+			Route: &config.RouteSpec{APIKey: "old-key", ModelPrefix: "zcode-"},
+		})
+	})
+	u := provider.FromManaged(s.currentConfig().Managed[0], up.URL, true, "")
+	if u.Source != provider.SourceNative {
+		t.Fatalf("Mode=native 应产出 SourceNative，得到 %q", u.Source)
+	}
+	u.RootURL = up.URL
+	s.reg.Reload([]provider.Upstream{u})
+
+	resp, err := http.Post(base+"/api/channels/admin-key", "application/json",
+		strings.NewReader(`{"name":"zc","admin_key":"new-key"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotImplemented {
+		t.Fatalf("原生渠道不该被判为 not_managed（得到 501）")
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("改密应 200，得到 %d", resp.StatusCode)
+	}
+	// zcode 的管理 API 前缀是 /admin/api（不是 /panel/api）
+	if got, _ := gotPath.Load().(string); got != "/admin/api/settings" {
+		t.Errorf("应打到 zcode 的 /admin/api/settings，得到 %q", got)
+	}
+	if got, _ := gotAuth.Load().(string); got != "Bearer old-key" {
+		t.Errorf("应用渠道旧 route key 鉴权，得到 %q", got)
+	}
+	// route key 是后台密码的真源：新值必须落盘到渠道配置
+	var saved string
+	for _, m := range s.currentConfig().Managed {
+		if m.Name == "zc" && m.Route != nil {
+			saved = m.Route.APIKey
+		}
+	}
+	if saved != "new-key" {
+		t.Errorf("route key 应同步为新值，得到 %q", saved)
 	}
 }
 

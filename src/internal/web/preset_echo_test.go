@@ -15,8 +15,7 @@ import (
 // 前端 `<select>` 停在第一个选项，**zcode 渠道被显示成「WorkBuddy 网关（wb2api）」**，
 // 保存时还会把这个错值写进配置。
 //
-// 这里同时锁住两半：老配置的**回显**（按 command/args/health 推断）与
-// **新保存**的持久化。
+// 这里同时锁住两半：老配置的**回显**（按 kind 查模板）与**新保存**的持久化。
 
 // rawPreset 请求 /api/channels/raw 并取出预设相关字段。
 func rawPreset(t *testing.T, base, name string) (string, bool) {
@@ -39,39 +38,29 @@ func rawPreset(t *testing.T, base, name string) (string, bool) {
 	return out.Preset, out.PresetInferred
 }
 
-func TestChannelRawInfersPresetWhenConfigLacksIt(t *testing.T) {
-	// 用两个渠道的**真实数据**。关键是它们在预设表里相邻且 workbuddy 排第一：
-	// 任何「取第一个命中」的实现都会把 zcode 判成 workbuddy，这正是原缺陷。
+func TestChannelRawInfersPresetFromKind(t *testing.T) {
+	// 老配置里没存 preset（该字段是后加的），但 kind 是创建时落盘的客观事实。
+	// kind 与模板 id 一一对应，照着查即可 —— 否则下拉框停在第一个选项，
+	// 把 zcode 渠道显示成 workbuddy，保存时还会写错。
 	cases := []struct {
-		name, command, health, portEnv string
-		args                           []string
-		want                           string
+		name, kind, health, want string
 	}{
-		{
-			name: "zcode", want: "zcode",
-			command: "C:/venvs/zcode2api/Scripts/python.exe",
-			args:    []string{"cli.py", "serve"},
-			health:  "/meta", portEnv: "ZCODE_PORT",
-		},
-		{
-			name: "workbuddy", want: "workbuddy",
-			command: "wb2api.exe", args: []string{},
-			health: "/healthz", portEnv: "WB2A_LISTEN",
-		},
+		{"zcode", "zcode", "/meta", "zcode"},
+		{"workbuddy", "workbuddy", "/healthz", "workbuddy"},
+		{"trae", "trae", "/healthz", "trae"},
 	}
 	for _, c := range cases {
-		// Enabled:false 只是为了让 raw 接口能找到它 —— 测试不该拉起真实子进程。
+		// Enabled:false 只是为了让 raw 接口能找到它 —— 测试不该拉起真实实例。
 		_, base := newTestServer(t, func(cfg *config.Config) {
 			cfg.Managed = []config.ManagedProvider{{
 				Name: c.name, DisplayName: c.name, Enabled: false,
-				Command: c.command, Args: c.args,
-				HealthPath: c.health, PortEnvVar: c.portEnv,
+				Mode: config.ModeNative, Kind: c.kind, HealthPath: c.health,
 				// Preset 刻意留空：模拟老配置（该字段是后加的）
 			}}
 		})
 		got, inferred := rawPreset(t, base, c.name)
 		if got != c.want {
-			t.Errorf("渠道 %s：preset = %q，期望 %q —— 配置里没记模板时应按 command/args/health 推断",
+			t.Errorf("渠道 %s：preset = %q，期望 %q —— 配置里没记模板时应按 kind 查表",
 				c.name, got, c.want)
 		}
 		if !inferred {
@@ -83,13 +72,13 @@ func TestChannelRawInfersPresetWhenConfigLacksIt(t *testing.T) {
 func TestChannelRawKeepsStoredPreset(t *testing.T) {
 	// 配置里已经记了模板时必须原样返回，且**不能**标成推断值 ——
 	// 否则用户会以为「这条记录是猜的」，反而不敢信。
-	// 这里故意让「配置值」与「按配置推断的结果」不一致（记 trae，但命令像 trae、
-	// 探活像 workbuddy），确保返回的是配置值而不是推断值。
+	// 这里故意让「配置值」与「按 kind 推断的结果」不一致（记 trae，但 kind 是 zcode），
+	// 确保返回的是配置值而不是推断值。
 	_, base := newTestServer(t, func(cfg *config.Config) {
 		cfg.Managed = []config.ManagedProvider{{
 			Name: "z", DisplayName: "z", Enabled: false,
-			Preset: "trae", Command: "node", Args: []string{"server.js"},
-			HealthPath: "/healthz",
+			Preset: "trae", Mode: config.ModeNative, Kind: "zcode",
+			HealthPath: "/meta",
 		}}
 	})
 	got, inferred := rawPreset(t, base, "z")

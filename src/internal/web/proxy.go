@@ -93,10 +93,10 @@ func (s *Server) handleChannelUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ch.Ready() {
-		// ReadyReason 由 Status() 统一给出（区分「配置停用」与「子进程未就绪」）
+		// ReadyReason 由 Status() 统一给出（区分「配置停用」与「本地服务未就绪」）
 		st := ch.Status()
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{
-			"error": "子进程未就绪：" + st.ReadyReason, "code": "channel_not_ready"})
+			"error": "本地服务未就绪：" + st.ReadyReason, "code": "channel_not_ready"})
 		return
 	}
 
@@ -240,25 +240,17 @@ func panelAPIPrefixFor(kind, configured string) string {
 
 // panelAuthKey 取管理通道的凭据。
 //
-// 两种 zcode 形态并存（迁移期），凭据来源不同，**必须分开**：
+// 托管渠道现在一律是**进程内原生**（独立子进程模式已整块移除）：
 //
-//   - **原生型**（SourceNative，Track 3 内置实现）：后台密码 = 渠道 route key
-//     （原生装配层把同一个值同时注入管理面与账号库 meta，见 native/zcode 的
-//     「密码合并」）。空 route key 回落契约默认值 `zcode`。
-//   - **托管型子进程**（SourceManaged，老配置里 python cli.py serve 那套）：
-//     认的是它自己的 `ZCODE_ADMIN_KEY`（Mergence 侧存在 config.Claim.AdminKey），
-//     route key 是转发通道的凭据，拿它去管理面会 401。老渠道的用户还没迁移，
-//     这条不能砍。
+//   - **zcode**：后台密码 = 渠道 route key（原生装配层把同一个值同时注入管理面
+//     与账号库 meta，见 native/zcode 的「密码合并」）。空 route key 回落契约
+//     默认值 `zcode`。
+//   - 其它网关：取渠道自己的 route key。
 //
-// 判据用 `up.Source` 而不是 kind：kind 对两种形态都是 "zcode"
-// （见 config.ManagedProvider 的 Mode 注释——老配置没有 Mode 字段，
-// 只能是子进程，正是为了让这种情况下不误判成原生）。
+// 用 kind 而不是 `up.Source` 区分：来源现在只有原生一种，kind 才是真正的分叉。
 func (s *Server) panelAuthKey(up provider.Upstream) string {
 	if kindOfUpstream(up) == "zcode" {
-		if up.Source == provider.SourceNative {
-			return zcodeAdminKey(up) // 内置原生：route key（空回落 zcode）
-		}
-		return s.claimSettings().AdminKey // 老式子进程：ZCODE_ADMIN_KEY
+		return zcodeAdminKey(up) // 后台密码 = route key（空回落 zcode）
 	}
 	return firstKey(up)
 }

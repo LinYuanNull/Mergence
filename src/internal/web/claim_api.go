@@ -61,22 +61,14 @@ func claimPathFor(kind string) string {
 
 // claimKeyFor 领取/签到用的凭据。
 //
-// 与 `panelAuthKey` 同一条判据（两种 zcode 形态并存，见那里的长注释）：
+// 与 `panelAuthKey` 同一条判据：
 //
-//   - **原生型**（SourceNative）：route key（空回落 `zcode`）—— 「后台密码」
-//     与「路由密钥」合并成一处。
-//   - **托管型子进程**（SourceManaged）：它自己的 `ZCODE_ADMIN_KEY`
-//     （Mergence 侧存在 config.Claim.AdminKey）。
-//
-// 用 `up.Source` 而不是 kind 区分：kind 对两种形态都是 "zcode"。合并前
-// 「后台密码要两处同步、只改一边就整块 401」的故障，在**原生型**上已经消除；
-// 老式子进程渠道保留原行为直到用户迁移。
+//   - **zcode**：后台密码 = 渠道 route key（空回落契约默认值 `zcode`）——
+//     独立子进程模式已移除，「后台密码」与「路由密钥」合并成一处。
+//   - 其它网关：取渠道自己的 route key。
 func (s *Server) claimKeyFor(kind string, up provider.Upstream) string {
 	if kind == "zcode" {
-		if up.Source == provider.SourceNative {
-			return zcodeAdminKey(up)
-		}
-		return s.claimSettings().AdminKey
+		return zcodeAdminKey(up)
 	}
 	return firstKey(up)
 }
@@ -342,10 +334,6 @@ func kindOfUpstream(up provider.Upstream) string {
 		return "workbuddy"
 	case strings.Contains(hay, "trae"):
 		return "trae"
-	case strings.Contains(hay, "new-api"), strings.Contains(hay, "newapi"):
-		// new-api 是多渠道聚合底座，一个系统里可以跑多个实例，
-		// 平台唯一性校验据此豁免（见 api_channels.go 的 kindTaken）。
-		return "newapi"
 	default:
 		return ""
 	}
@@ -363,8 +351,8 @@ var (
 		return fmt.Errorf("网关返回的不是可识别的领取回执：%s", s)
 	}
 	errAdminKeyRejected = func(code int) error {
-		return fmt.Errorf("凭据被拒绝（HTTP %d）：zcode 请核对设置页的「后台密码」，"+
-			"trae 请核对渠道的「路由密钥」", code)
+		return fmt.Errorf("凭据被拒绝（HTTP %d）：zcode 请核对渠道的「路由密钥」"+
+			"（它同时是网关后台密码，留空即默认 `zcode`），trae 请核对渠道的「路由密钥」", code)
 	}
 	errClaimStatus = func(code int, body []byte) error {
 		s := strings.TrimSpace(string(body))

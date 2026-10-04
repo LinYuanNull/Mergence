@@ -9,7 +9,7 @@
 
 链路（每一步都是真实 HTTP，断言读的是**渲染后的 DOM 文本**，不是 innerHTML 字符串）：
     Edge(headless) → Mergence 面板 → /api/channels/<chan>/upstream/*
-                   → Mergence 服务端注入后台密码 → 假 zcode2api 的 /admin/api/*
+                   → Mergence 服务端注入路由密钥（= 网关后台密码）→ 假 zcode2api 的 /admin/api/*
 
 覆盖：账号渲染 / 导出（含下载文件字节）/ 领取预览+领取 / 新增 / 编辑改名 /
       启停 / 全量刷新 / 导入 / 删除（确认框）/ 设备码登录轮询到成功。
@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -142,6 +143,63 @@ def wait_port(proc, log, timeout=30):
     return None
 
 
+def wait_tcp(port, timeout=15):
+    """等某个回环端口能连上（上游起好了）。"""
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.2)
+    return False
+
+
+def start_fake(cmd, port, env_extra=None, timeout=15):
+    """起上游并等它就绪。
+
+    独立子进程模式移除后，托管渠道改走「外部接管」：上游由**测试自己**起成
+    独立服务（和用户自己部署一套网关的情形一致），再用 MERGENCE_EXTERNAL_URL
+    把它接进 Mergence。所以测试要负责它的生命周期。
+    """
+    env = dict(os.environ)
+    if env_extra:
+        env.update(env_extra)
+    p = subprocess.Popen(cmd, env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not wait_tcp(port, timeout):
+        raise RuntimeError(f"上游未在 {timeout}s 内监听 {port}：{cmd}")
+    return p
+
+
+def external_env(port):
+    """构造「外部接管」渠道的 env：告诉 Mergence 上游已经在哪。"""
+    return {"MERGENCE_EXTERNAL_URL": f"http://127.0.0.1:{port}"}
+
+
+def start_upstream():
+    """把上游（假 zcode2api 或真实 Go 实现）起成独立服务并等就绪。"""
+    if GO_MODE:
+        if not os.path.isfile(UPSTREAM_EXE):
+            print("ZCODE_UPSTREAM_EXE 指向的文件不存在：" + UPSTREAM_EXE)
+            return None
+        up_home = os.path.join(HOME, "go-upstream")
+        shutil.rmtree(up_home, ignore_errors=True)
+        os.makedirs(up_home, exist_ok=True)
+        cmd = [UPSTREAM_EXE, "serve", "--host", "127.0.0.1",
+               "--data-dir", os.path.join(up_home, "data"),
+               "--admin-key", ZCODE_ADMIN_KEY,
+               # 给一个网关 Key：面板的设置页要求 `gateway_key_masked` 非空
+               # （「密钥以掩码回显」一项），空密钥会渲染成空串。
+               "--gateway-key", "sk-go-gateway-abcdef123456"]
+        if PANEL_DIR:
+            cmd += ["--panel-dir", PANEL_DIR]
+    else:
+        cmd = [PY, FAKE_ZCODE, str(ZCODE_PORT)]
+    # 上游端口由 ZCODE_PORT 环境变量给出（Go 实现与假网关都读同名变量）。
+    return start_fake(cmd, ZCODE_PORT, env_extra={"ZCODE_PORT": str(ZCODE_PORT)})
+
+
 def wait_file(folder, suffix, timeout=20):
     end = time.time() + timeout
     while time.time() < end:
@@ -158,14 +216,13 @@ def wait_file(folder, suffix, timeout=20):
 
 
 def main():
-    # 固定隔离目录（不用时间戳，便于排查）。只清「会影响断言」的四样东西：
+    # 固定隔离目录（不用时间戳，便于排查）。只清「会影响断言」的几样东西：
     #   config/                    渠道与设置（否则上一轮的渠道残留）
-    #   data/ports.json            端口映射（否则 Reuse 让端口在几轮之间漂移）
     #   data/logs/mergence.log     监听日志（否则 wait_port 可能读到上一轮的旧端口）
     #   downloads/                 上一轮导出的文件（否则会拿旧文件当本轮结果）
     # 整个 HOME 递归删会被沙箱的批量删除保护拦下（跑到一半失败还更糟）；
     # edge-profile 留着反而省一次浏览器冷启动。
-    for rel in ("config", "data/logs/mergence.log", "data/ports.json", "downloads"):
+    for rel in ("config", "data/logs/mergence.log", "downloads"):
         p = os.path.join(HOME, *rel.split("/"))
         if os.path.isdir(p):
             shutil.rmtree(p, ignore_errors=True)
@@ -176,6 +233,12 @@ def main():
                 pass
     os.makedirs(os.path.join(HOME, "config"), exist_ok=True)
     os.makedirs(DL, exist_ok=True)
+
+    # 上游由**测试自己**起成独立服务（独立子进程模式已移除，Mergence 不再拉起
+    # 任何上游）；随后用 MERGENCE_EXTERNAL_URL 把它接进托管渠道。
+    up_proc = start_upstream()
+    if up_proc is None:
+        return 1
 
     env = dict(os.environ)
     env["MERGENCE_HOME"] = HOME
@@ -198,45 +261,23 @@ def main():
         for c in (ch0.get("channels") or []):
             delete(base, "/api/channels?name=" + urllib.parse.quote(c.get("name", "")))
 
-        # ── 托管渠道：Mergence 拉起上游（默认假 zcode2api；GO_MODE 下换成 Go 实现）
-        # 端口由编排器分配并经 port_env_var 注入 ZCODE_PORT —— Go 实现读同名变量。
-        if GO_MODE:
-            if not os.path.isfile(UPSTREAM_EXE):
-                print("ZCODE_UPSTREAM_EXE 指向的文件不存在：" + UPSTREAM_EXE)
-                return 1
-            up_home = os.path.join(HOME, "go-upstream")
-            shutil.rmtree(up_home, ignore_errors=True)
-            os.makedirs(up_home, exist_ok=True)
-            up_cmd = UPSTREAM_EXE
-            up_args = ["serve", "--host", "127.0.0.1",
-                       "--data-dir", os.path.join(up_home, "data"),
-                       "--admin-key", ZCODE_ADMIN_KEY,
-                       # 给一个网关 Key：面板的设置页要求 `gateway_key_masked` 非空
-                       # （「密钥以掩码回显」一项），空密钥会渲染成空串。
-                       "--gateway-key", "sk-go-gateway-abcdef123456"]
-            if PANEL_DIR:
-                up_args += ["--panel-dir", PANEL_DIR]
-            up_dir = up_home
-        else:
-            up_cmd = PY
-            up_args = [FAKE_ZCODE, str(ZCODE_PORT)]
-            up_dir = os.path.dirname(FAKE_ZCODE)
-
+        # ── 托管渠道：外部接管一个已在运行的上游（假 zcode2api；GO_MODE 下换 Go 实现）
+        # 路由密钥 = 网关后台密码（原生型下两者合一），面板代理据此注入 Bearer。
         st, d = post(base, "/api/channels", {
-            "kind": "managed", "name": "", "display_name": "ZCode 网关", "preset": "zcode",
-            "command": up_cmd, "args": up_args,
-            "dir": up_dir, "enabled": True,
-            "port_env_var": "ZCODE_PORT", "health_path": "/meta", "panel_path": "/admin/",
+            "kind": "managed", "name": "", "display_name": "ZCode 网关",
+            "preset": "zcode", "gateway_kind": "zcode", "enabled": True,
+            "health_path": "/meta", "panel_path": "/admin/",
             "model_prefix": "zcode-", "expose": True, "protocol": "chat",
-            "models": ["glm-4.6"],
+            "models": ["glm-4.6"], "api_keys": [ZCODE_ADMIN_KEY],
+            "env": external_env(ZCODE_PORT),
         }, timeout=150)
-        check("托管渠道创建成功（zcode 预设）", st == 200 and d.get("ok"), f"{st} {d}")
+        check("托管渠道创建成功（zcode 预设 + 外部接管）", st == 200 and d.get("ok"), f"{st} {d}")
         ch_name = d.get("name", "")
         if not ch_name:
             print("渠道名缺失，后续无法继续")
             return 1
 
-        # 等子进程就绪 + console_kind 探成 zcode
+        # 等上游就绪 + console_kind 探成 zcode
         console_kind = ""
         for _ in range(50):
             time.sleep(0.4)
@@ -248,10 +289,11 @@ def main():
                 break
         check("渠道就绪且控制台类型识别为 zcode", console_kind == "zcode", f"kind={console_kind!r}")
 
-        # 填后台密码（面板代理的凭据来源就是它，不是渠道 route 的 Key）
+        # 打开领取开关并填后台密码（领取执行器据此判定「已配置」；
+        # 而面板代理注入的 Bearer 来自渠道路由密钥 —— 原生型下两者合并成一处）。
         st, d = post(base, "/api/claim/config", {"enabled": True, "at": "12:01",
                                                  "window": 4, "channel": "", "admin_key": ZCODE_ADMIN_KEY})
-        check("后台密码已写入（面板代理据此注入 Bearer）", st == 200 and d.get("configured"), f"{st} {d}")
+        check("领取开关已开且后台密码已填", st == 200 and d.get("configured"), f"{st} {d}")
 
         upq = "/api/channels/" + urllib.parse.quote(ch_name) + "/upstream"
 
@@ -646,19 +688,23 @@ def main():
         st, d = post(base, "/api/channels/admin-key",
                      {"name": ch_name, "admin_key": new_key}, timeout=60)
         check("后台密码同步接口返回 ok 且声明两处都已同步",
-              st == 200 and d.get("ok") and set(d.get("synced") or []) == {"gateway", "mergence"},
+              st == 200 and d.get("ok") and set(d.get("synced") or []) == {"gateway", "route_key"},
               f"{st} {d}")
-        # 本机侧的直接证据：配置文件里的 claim.admin_key 必须是新值（原子落盘的产物）
+        # 本机侧的直接证据：route key 就是后台密码的**真源**，配置里该渠道的
+        # route.api_key 必须是新值（原子落盘的产物）。
         cfgp = os.path.join(HOME, "config", "mergence.json")
         try:
             saved = json.load(open(cfgp, encoding="utf-8"))
         except Exception as e:
             saved = {"_err": str(e)}
-        check("本机侧 Claim.AdminKey 已同步为新值（读配置文件为证）",
-              ((saved.get("claim") or {}).get("admin_key") or "") == new_key,
-              f"{(saved.get('claim') or {}).get('admin_key')!r}")
+        saved_key = ""
+        for m in (saved.get("managed_providers") or []):
+            if m.get("name") == ch_name:
+                saved_key = (m.get("route") or {}).get("api_key") or ""
+        check("本机侧 route key 已同步为新值（读配置文件为证）",
+              saved_key == new_key, repr(saved_key))
         # 网关侧的证据：假上游已改用新密码鉴权，代理注入的 Bearer 也必须是新值才可能 200。
-        # 两边任意一边没改，这条都会失败——这正是「两处同步」这个不变式的判据。
+        # 两边任意一边没改，这条都会失败——这正是「两处一致」这个不变式的判据。
         st, s3 = get(base, upq + "/settings")
         check("改密后用新凭据仍能读网关设置（网关侧与本机侧确实一致）",
               st == 200 and "quota_refresh_interval" in s3, f"{st} {s3}")
@@ -669,9 +715,8 @@ def main():
     finally:
         if ws:
             ws.close()
-        # 走优雅退出：/api/quit 会让服务端按序回收托管子进程（假网关）。
-        # 直接 terminate 主进程会把它拉起的子进程留成孤儿，孤儿继续占着
-        # 编排器分配的那个端口，下一轮只能换端口——端口一轮一漂就是这样来的。
+        # 走优雅退出：/api/quit 让服务端按序回收原生实例（停监听 → 上游落盘）。
+        # 上游本身是测试起的独立服务，Mergence 不管它，收尾时自己收掉。
         if mm and mm.poll() is None and base:
             try:
                 post(base, "/api/quit", {})
@@ -681,7 +726,7 @@ def main():
                 if mm.poll() is not None:
                     break
                 time.sleep(0.25)
-        for p in (edge, mm):
+        for p in (edge, mm, up_proc):
             try:
                 if p and p.poll() is None:
                     p.kill()

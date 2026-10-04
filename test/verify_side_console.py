@@ -285,12 +285,13 @@ def main():
         shot(ws, "side_console")
 
         # ── 4. 控制台入口常驻（不再依赖先点「积分型平台」）────
-        # 结构上必须「不可折叠」：有折叠控件或折角就说明还能被收起来，
-        # 而 .nav-sec.closed .nav-sec-bd{display:none} 会把入口整个藏掉。
-        check("上游控制台分组头是静态标签，没有折叠控件与折角",
-              js("!!document.querySelector('#upGroup .nav-sec-hd.static')")
-              and not js("document.querySelector('#upGroup [data-sec-toggle]')")
-              and not js("document.querySelector('#upGroup .caret')"), "")
+        # 分组**可以**收起。这条判据是从「不可折叠」翻过来的：
+        # 入口的可见性不再靠「钉死不许收」来保证，而是靠「收起来一点就开」
+        # 加上「主面板那份入口始终在」。下面几条连起来才构成完整的保证。
+        check("上游控制台分组头是折叠控件（带折角、可点）",
+              (not js("!!document.querySelector('#upGroup .nav-sec-hd.static')"))
+              and bool(js("!!document.querySelector('#upGroup [data-sec-toggle=up]')"))
+              and bool(js("!!document.querySelector('#upGroup .caret')")), "")
         # 逐个视图切过去：入口必须始终在（含概览、渠道类视图、运维里的视图）
         for v in ("overview", "api", "add", "settings", "logs"):
             js("setView('" + v + "')")
@@ -315,18 +316,165 @@ def main():
         check("未点任何视图，控制台入口已自动出现",
               (not hid) and (cards or 0) >= 2, "hidden=%s cards=%s" % (hid, cards))
 
-        # 旧版本存过「上游控制台已收起」；升级后不能被它重新藏起来
+        # 收起的语义要钉死两件事：① 用户的折叠选择被尊重；② 想找入口时
+        # 一定找得回来（点分组头就展开，主面板控制台那条路更不受影响）。
         js("localStorage.setItem('mm_navsec', JSON.stringify({up:1,ops:1}))")
         ws.call("Page.reload", {})
         time.sleep(7)
-        check("忽略历史遗留的『上游控制台已收起』状态",
+        check("控制台分组的收起状态被尊重（不再是钉死的常驻分组）",
+              js("document.getElementById('upGroup').classList.contains('closed')")
+              and js("getComputedStyle(document.querySelector('#upGroup .nav-sec-bd')).display") == "none",
+              js("document.getElementById('upGroup').className"))
+        js("document.querySelector('#upGroup [data-sec-toggle=up]').click()")
+        time.sleep(0.6)
+        check("点分组头即可展开，入口回到原处",
               (not js("document.getElementById('upGroup').classList.contains('closed')"))
               and js("document.querySelectorAll('#upChanList .upcard').length") >= 2,
               js("document.getElementById('upGroup').className"))
-        check("其它分组的收起状态照旧生效（只豁免上游控制台）",
+        check("其它分组的收起状态照旧生效",
               js("document.querySelector('[data-sec=ops]').classList.contains('closed')"),
               js("document.querySelector('[data-sec=ops]').className"))
+        # 从「控制台分组被强制常驻」那一版直接升级上来时，localStorage 里可能
+        # 还留着更早版本写的 up:1。若照单全收，用户第一次启动就会看到分组是收起的
+        # ——「入口不见了」正是这次要修的问题，不能换个形式复现，所以清一次。
+        js("localStorage.setItem('mm_navsec', JSON.stringify({up:1}));"
+           "localStorage.removeItem('mm_navsec_purge_v1')")
+        ws.call("Page.reload", {})
+        time.sleep(7)
+        check("升级场景：旧版本留下的『控制台已收起』被一次性清掉",
+              not js("document.getElementById('upGroup').classList.contains('closed')"),
+              js("document.getElementById('upGroup').className"))
         js("try{localStorage.removeItem('mm_navsec')}catch(e){}")
+
+        # ── 4b. 控制台合并成「一个带页签的主面板视图」──────────
+        # 判据三条：工具条常驻、页签与侧栏同源、点页签同时切视图与渠道。
+        js("openUpView('workbuddy', 'up-accounts')")
+        time.sleep(3.0)
+        check("控制台视图下出现共用工具条（平台选择器 + 页签栏）",
+              (not js("document.getElementById('conHead').hidden"))
+              and js("document.getElementById('conChan').tagName") == "SELECT"
+              and js("document.querySelectorAll('#conChan option').length") >= 2,
+              js("document.querySelectorAll('#conChan option').length"))
+        # 下拉与侧栏卡片同源：不同源的话会出现「下拉里有、侧栏里没有」
+        # （或反过来），用户会以为漏了渠道。
+        check("平台下拉与侧栏渠道卡片一一对应",
+              js("[...document.querySelectorAll('#conChan option')].map(o=>o.value).sort().join(',')")
+              == js("[...document.querySelectorAll('#upChanList .upcard')]"
+                    ".map(c=>c.dataset.chanCard).sort().join(',')"),
+              js("[...document.querySelectorAll('#conChan option')].map(o=>o.value).join(',')"))
+        # 页签表必须与侧栏卡片**同一份**：侧栏列 7 个而页签只给 3 个的话，
+        # 用户会以为有 4 个页签被藏起来了，比少列几个入口更难排查。
+        check("gateway 渠道的页签数与侧栏入口数一致（7 个）",
+              js("document.querySelectorAll('#conTabs button[data-con-view]').length")
+              == js("document.querySelectorAll('.upcard[data-chan-card=workbuddy] .nav-i[data-view]').length")
+              == 7,
+              js("document.querySelectorAll('#conTabs button[data-con-view]').length"))
+        check("页签表与侧栏入口表逐个同名同序",
+              js("[...document.querySelectorAll('#conTabs button[data-con-view]')]"
+                 ".map(b=>b.dataset.conView).join(',')")
+              == js("[...document.querySelectorAll('.upcard[data-chan-card=workbuddy] .nav-i[data-view]')]"
+                    ".map(a=>a.dataset.view).join(',')"),
+              js("[...document.querySelectorAll('#conTabs button[data-con-view]')]"
+                 ".map(b=>b.dataset.conView).join(',')"))
+        check("当前页签高亮与视图一致",
+              js("document.querySelector('#conTabs button.on').dataset.conView") == js("Store.get().view"),
+              js("Store.get().view"))
+        js("document.querySelector('#conTabs button[data-con-view=up-usage]').click()")
+        time.sleep(3.0)
+        check("点页签切视图，工具条原地不动（看起来是同一个控制台）",
+              js("Store.get().view") == "up-usage"
+              and (not js("document.getElementById('conHead').hidden"))
+              and js("document.querySelector('#conTabs button.on').dataset.conView") == "up-usage",
+              js("Store.get().view"))
+        # 换平台：优先保留当前页签，但新渠道没有那个页签时要落回第一项
+        # （zcode 只有 3 个原生视图，没有「用量」）。
+        js("(function(){var s=document.getElementById('conChan');s.value='zcode';"
+           "s.dispatchEvent(new Event('change'))})()")
+        time.sleep(5.0)
+        check("换平台后渠道切过去，视图落回该渠道存在的页签",
+              js("UP.chan") == "zcode" and js("Store.get().view") == "up-zc-accounts",
+              "chan=%s view=%s" % (js("UP.chan"), js("Store.get().view")))
+        check("zcode 的页签是它自己的 3 个（gateway 那 7 个不会露出来）",
+              js("[...document.querySelectorAll('#conTabs button[data-con-view]')]"
+                 ".map(b=>b.dataset.conView).join(',')") == "up-zc-accounts,up-zc-monitor,up-zc-settings",
+              js("[...document.querySelectorAll('#conTabs button[data-con-view]')]"
+                 ".map(b=>b.dataset.conView).join(',')"))
+        check("「添加账号」只对 gateway 形态出现（zcode 的账号在它自己页里加）",
+              js("document.getElementById('btnConAdd').hidden") is True, "")
+        js("(function(){var s=document.getElementById('conChan');s.value='workbuddy';"
+           "s.dispatchEvent(new Event('change'))})()")
+        time.sleep(5.0)
+        check("换回 gateway 渠道：页签回到 7 个、「添加账号」出现",
+              js("document.querySelectorAll('#conTabs button[data-con-view]').length") == 7
+              and not js("document.getElementById('btnConAdd').hidden"), "")
+        # 工具条只属于控制台：不能挂在别的视图上
+        js("setView('overview')")
+        time.sleep(0.9)
+        check("离开控制台后工具条隐藏", js("document.getElementById('conHead').hidden") is True, "")
+        js("openUpView('workbuddy', 'up-accounts')")
+        time.sleep(3.0)
+        check("回到控制台工具条又出现", js("document.getElementById('conHead').hidden") is False, "")
+
+        # ── 4c. 「积分型平台」页的控制台入口 + 设置里的隐藏开关 ───
+        js("setView('acct')")
+        time.sleep(2.2)
+        check("「积分型平台」页顶部有控制台入口区块（原先缺的就是这条通路）",
+              (not js("document.getElementById('acctConsole').hidden"))
+              and js("document.querySelectorAll('#acctConsoleList .ce-row [data-con-open]').length") >= 1,
+              js("document.querySelectorAll('#acctConsoleList .ce-row').length"))
+        js("document.querySelector('#acctConsoleList [data-con-open]').click()")
+        time.sleep(4.0)
+        check("点它真的进控制台（渠道与视图同时就位，不是切到空视图）",
+              bool(js("UP.chan")) and str(js("Store.get().view")).startswith("up-"),
+              "chan=%s view=%s" % (js("UP.chan"), js("Store.get().view")))
+        check("落点是账号池——那一页才有「添加账号」，这正是这块入口的用途",
+              js("Store.get().view") in ("up-accounts", "up-zc-accounts"), js("Store.get().view"))
+
+        # 开关用接口往返而不是只点 checkbox：顺带证明它真的落盘。
+        js("setView('settings')")
+        time.sleep(1.3)
+        check("设置页有「控制台入口」开关且默认开启",
+              bool(js("!!document.getElementById('fAcctConsole')"))
+              and js("document.getElementById('fAcctConsole').checked") is True,
+              js("document.getElementById('acctConsoleState').textContent"))
+
+        def setConsolePref(want):
+            return js("(function(){return fetch('/api/settings/console',{method:'POST',"
+                      "headers:{'Content-Type':'application/json'},"
+                      "body:JSON.stringify({acct_console:%s})})"
+                      ".then(function(r){return r.json()})})()" % ("true" if want else "false"))
+
+        r = setConsolePref(False)
+        check("POST /api/settings/console 回显新值与说明",
+              isinstance(r, dict) and r.get("acct_console") is False
+              and isinstance(r.get("note"), str) and r.get("note"), r)
+        js("pollStatus()")
+        time.sleep(1.2)
+        js("setView('acct')")
+        time.sleep(1.8)
+        check("关掉开关：「积分型平台」页的入口区块收起",
+              js("document.getElementById('acctConsole').hidden") is True, "")
+        check("关掉开关不会连侧栏入口一起藏掉（入口必须永远留一条路）",
+              (not js("document.getElementById('upGroup').hidden"))
+              and js("document.querySelectorAll('#upChanList .upcard').length") >= 2, "")
+        # 复原：绝不能把用户的开关留在测试改过的状态
+        try:
+            r2 = setConsolePref(True)
+            check("恢复开关成功", isinstance(r2, dict) and r2.get("acct_console") is True, r2)
+        finally:
+            setConsolePref(True)
+            js("pollStatus()")
+            time.sleep(1.2)
+        js("setView('acct')")
+        time.sleep(1.8)
+        check("恢复后入口区块回来（这就是「被隐藏后如何恢复」的那条路）",
+              not js("document.getElementById('acctConsole').hidden"), "")
+        js("setView('settings')")
+        time.sleep(1.0)
+        check("设置页开关同步回「开」",
+              js("document.getElementById('fAcctConsole').checked") is True,
+              js("document.getElementById('acctConsoleState').textContent"))
+
         # ── 5. zcode 的原生控制台（原先是外链，现已整合进应用）────
         # 这一节同时覆盖「整合进应用」与「查看不需要面板密码」两件事：
         # 密码由后端注入，浏览器全程不接触，所以这里能直接拿到数据。

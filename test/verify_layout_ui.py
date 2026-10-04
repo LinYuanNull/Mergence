@@ -88,9 +88,23 @@ def main():
         check("侧栏没有 collapsed 类（功能已取消）",
               js("!document.getElementById('sidebar').className.includes('collapsed')"), "")
         n = js("document.querySelectorAll('.nav-sec').length")
-        check("导航分组结构不变（3 组，其中 2 组可折叠）", n == 3, f"groups={n}")
-        check("上游控制台是常驻分组（无折叠控件）",
-              not js("document.querySelector('#upGroup [data-sec-toggle]')"), "")
+        check("导航分组结构不变（3 组）", n == 3, f"groups={n}")
+        # 「控制台」改回可折叠：原先它被做成常驻不可收起（理由是入口要随时可见），
+        # 但同样的入口现在在主面板控制台的页签栏里都有一份，侧栏这份只是快捷跳转，
+        # 渠道一多就会把侧栏撑满，所以允许收起。3 组都必须有折叠控件。
+        check("三个分组都可折叠（控制台不再被钉死为常驻）",
+              js("document.querySelectorAll('.nav-sec [data-sec-toggle]').length") == 3,
+              js("[...document.querySelectorAll('.nav-sec')].map(x=>x.dataset.sec+':'+!!x.querySelector('[data-sec-toggle]')).join(',')"))
+        js("document.querySelector('[data-sec-toggle=up]').click()")
+        time.sleep(0.4)
+        check("控制台分组可收起（子项隐藏）",
+              js("document.querySelector('[data-sec=up]').classList.contains('closed')")
+              and js("getComputedStyle(document.querySelector('#upGroup .nav-sec-bd')).display") == "none",
+              js("document.getElementById('upGroup').className"))
+        js("document.querySelector('[data-sec-toggle=up]').click()")
+        time.sleep(0.4)
+        check("控制台分组可再展开（入口找得回来）",
+              not js("document.querySelector('[data-sec=up]').classList.contains('closed')"), "")
         # 折叠与恢复
         js("document.querySelector('[data-sec-toggle=ops]').click()")
         time.sleep(0.4)
@@ -390,12 +404,14 @@ def main():
             check("托管型下拉带「未记录模板」占位项（判不出时不显示错的）",
                   js("!!document.querySelector('#fPreset option[value=\"\"]')"),
                   js("document.querySelector('#fPreset option[value=\"\"]').textContent"))
-            # 模板不能覆盖表单里用户已保存的真实值
-            cmd = (js("document.getElementById('fCmd').value") or "")
+            # 模板不能覆盖表单里用户已保存的真实值。
+            # 独立子进程模式移除后，托管渠道的「真实值」落在探活路径与环境变量上，
+            # 已删掉的启动命令字段不再是判据。
+            envv = (js("document.getElementById('fEnv').value") or "")
             hp = js("document.getElementById('fHealthM').value")
-            check("表单字段仍是渠道真实值（模板未覆盖命令/探活路径）",
-                  "python" in cmd.lower() and hp == "/meta",
-                  "cmd=%s health=%s" % (cmd[:60], hp))
+            check("表单字段仍是渠道真实值（模板未覆盖探活路径/环境变量）",
+                  hp == "/meta" and "MERGENCE_EXTERNAL_URL" in envv,
+                  "env=%s health=%s" % (envv[:60], hp))
             # preset 是推断来的，界面上要说清来源，别让人以为是自己填的
             hint = js("document.getElementById('presetHint').textContent") or ""
             check("界面上标明了模板来源有推断成分", "推断" in hint, hint[:160])

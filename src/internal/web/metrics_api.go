@@ -249,7 +249,7 @@ func (s *Server) collectUpstreamUsage(ctx context.Context, days int) []UpstreamU
 			continue
 		}
 		if !c.Ready() {
-			results[i].Error = "子进程未就绪：" + c.Status().ReadyReason
+			results[i].Error = "本地服务未就绪：" + c.Status().ReadyReason
 			continue
 		}
 		wg.Add(1)
@@ -374,7 +374,9 @@ func (s *Server) creditValueOf(name string) float64 {
 // 只接受托管型：内嵌型渠道跑在本进程内，没有自己的管理 API。
 // 拉的是它面板的 usage 端点（字段名各家有差异，全部做防御式读取）。
 func fetchUpstreamUsage(ctx context.Context, up provider.Upstream, days int) (UpstreamUsage, error) {
-	if up.Source != provider.SourceManaged {
+	// 用 Hosted() 而不是 `== SourceManaged`：托管渠道现在一律是进程内原生
+	// （SourceNative），拿旧值判会把所有渠道都当成内嵌型而读不到用量。
+	if !up.Source.Hosted() {
 		return UpstreamUsage{}, errNotManaged
 	}
 	root := strings.TrimRight(up.RootURL, "/")

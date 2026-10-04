@@ -70,19 +70,18 @@ func TestClaimPathForTrae(t *testing.T) {
 	}
 }
 
-// TestClaimKeyForUsesRouteKeyAfterMerge 领取/签到凭据来源（两种 zcode 形态并存）。
+// TestClaimKeyForUsesRouteKeyAfterMerge 领取/签到凭据来源。
 //
-// 原生型（Track 3 内置实现）后台密码 = 渠道 route key（空回落契约默认值 `zcode`）；
-// 托管型子进程仍是它自己的 ZCODE_ADMIN_KEY。这条分叉不能合并掉：老配置里
-// 跑 python cli.py serve 的渠道还没迁移，拿 route key 去它的管理面会 401。
-//
-// 合并前「后台密码要在两处同步、只改一边就整块 401」的故障，在原生型上已消除。
+// 独立子进程模式已移除，所有托管渠道都是**原生型**：zcode 的后台密码 = 渠道
+// route key（空回落契约默认值 `zcode`）；trae 等其它网关同样取 route key。
+// 合并前「后台密码要在两处同步、只改一边就整块 401」的故障已彻底消除。
 func TestClaimKeyForUsesRouteKeyAfterMerge(t *testing.T) {
 	s, _ := newTestServer(t, nil)
 
-	// trae 仍是 route key（它本来就没有独立后台密码）。
+	// trae：route key（它本来就没有独立后台密码）。
 	traeUp := provider.FromManaged(config.ManagedProvider{
 		Name: "trae", DisplayName: "Trae", Enabled: true, Preset: "trae", Kind: "trae",
+		Mode:  config.ModeNative,
 		Route: &config.RouteSpec{APIKey: "route-key", ModelPrefix: "trae/"},
 	}, "http://127.0.0.1:1", true, "")
 	if got := s.claimKeyFor("trae", traeUp); got != "route-key" {
@@ -99,7 +98,7 @@ func TestClaimKeyForUsesRouteKeyAfterMerge(t *testing.T) {
 		t.Fatalf("测试前提不成立：Mode=native 应产出 SourceNative，实际 %s", nativeUp.Source)
 	}
 	if got := s.claimKeyFor("zcode", nativeUp); got != "route-key" {
-		t.Errorf("原生型 zcode 领取凭据 = %q，期望 route key（合并后唯一来源）", got)
+		t.Errorf("原生型 zcode 领取凭据 = %q，期望 route key（唯一来源）", got)
 	}
 
 	// 原生型 zcode 空 route key：回落契约默认值。
@@ -110,21 +109,6 @@ func TestClaimKeyForUsesRouteKeyAfterMerge(t *testing.T) {
 	}, "http://127.0.0.1:1", true, "")
 	if got := s.claimKeyFor("zcode", emptyNative); got != "zcode" {
 		t.Errorf("原生型 zcode 空 route key 时凭据 = %q，期望契约默认值 zcode", got)
-	}
-
-	// 托管型子进程 zcode（老配置，无 Mode 字段）：仍用后台密码。
-	legacy := provider.FromManaged(config.ManagedProvider{
-		Name: "zcode-legacy", DisplayName: "ZCode (python)", Enabled: true, Kind: "zcode",
-		Preset: "zcode", Command: "python",
-		Route: &config.RouteSpec{APIKey: "route-key", ModelPrefix: "zcode-"},
-	}, "http://127.0.0.1:1", true, "")
-	if legacy.Source != provider.SourceManaged {
-		t.Fatalf("测试前提不成立：无 Mode 应产出 SourceManaged，实际 %s", legacy.Source)
-	}
-	// 老式子进程的凭据来自 Claim.AdminKey —— 断言它与 route key 不同源，
-	// 从而证明「合并只作用于原生型」。
-	if got := s.claimKeyFor("zcode", legacy); got == "route-key" {
-		t.Errorf("老式子进程 zcode 的凭据不应取自 route key（应取 Claim.AdminKey），实际 %q", got)
 	}
 }
 
@@ -228,9 +212,9 @@ func TestTraePanelProxyForwardsWrites(t *testing.T) {
 // TestNativeTraeChannelRoundTrip 面板新建一条 trae 原生渠道的完整往返：
 // 前端提交 → 落盘 → /api/channels/raw 回显。
 //
-// mode 不回显 ⇒ 编辑一次就变回子进程（去拉起不存在的可执行文件）；
-// kind 不回显 ⇒ 平台唯一性校验失效；
+// kind 不回显 ⇒ 平台唯一性校验失效、面板代理找不到契约前缀；
 // preset 不回显 ⇒ 下拉框停在第一个选项，把 trae 显示成别的模板。
+// mode 不必回显：托管渠道现在只有进程内原生一种形态，由服务端固定写死。
 func TestNativeTraeChannelRoundTrip(t *testing.T) {
 	_, base := newTestServer(t, nil)
 
@@ -256,14 +240,8 @@ func TestNativeTraeChannelRoundTrip(t *testing.T) {
 	}
 
 	out := rawManaged(t, base, "trae")
-	if got := out["mode"]; got != config.ModeNative {
-		t.Errorf("落盘后 mode = %v，期望 %q", got, config.ModeNative)
-	}
 	if got := out["gateway_kind"]; got != "trae" {
 		t.Errorf("落盘后 gateway_kind = %v，期望 trae", got)
-	}
-	if got := out["command"]; got != "" && got != nil {
-		t.Errorf("原生型不该落盘 command，得到 %v", got)
 	}
 	if got := out["preset"]; got != "trae" {
 		t.Errorf("raw.preset = %v，期望 trae", got)
@@ -272,9 +250,8 @@ func TestNativeTraeChannelRoundTrip(t *testing.T) {
 
 // TestNativeTraeChannelConflictsWithStoredKind 同平台唯一性。
 //
-// trae 刻意没有 LegacyCommands（老配置的 command 是解释器名 `node`，不具
-// 区分度），所以子进程形态的老 trae 渠道**认不出来**，这条唯一性拦不住它。
-// 这里锁住的是另一条更可靠的路径：只要渠道落盘了 kind=trae，就拦得住。
+// 老配置里 trae 渠道可能没存 preset，但 kind 是创建时落盘的识别结果，
+// 只要落盘了 kind=trae，就拦得住。
 func TestNativeTraeChannelConflictsWithStoredKind(t *testing.T) {
 	_, base := newTestServer(t, func(cfg *config.Config) {
 		cfg.Managed = []config.ManagedProvider{{

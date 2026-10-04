@@ -1,23 +1,22 @@
 // native.go 原生型 provider 的编排。
 //
-// ── 与子进程路径的差别只有三处 ───────────────────────────────
+// 托管型上游只有这一种运行方式：装配上游的 http.Handler（native.Boot）→
+// 在本进程内起一个只绑回环的服务（native.Serve）→ 真的发一次 HTTP 探活。
 //
-//  1. **不分配端口**：原生服务绑 127.0.0.1:0，端口由内核给，且**不进 ports.json**
-//     （端口表服务于「用户要把地址填到别处」的子进程实例，原生实例没有这个需求）。
-//  2. **不 exec**：改成本进程内装配（native.Boot）+ 回环监听（native.Serve）。
+//  1. **不分配端口**：原生服务绑 127.0.0.1:0，端口由内核给，且**不进任何端口表**
+//     （没有子进程，也就没有「把地址填到别处」的持久化需求）。
+//  2. **不 exec**：没有可执行文件，没有命令行、没有工作目录、没有环境变量注入。
 //  3. **停止是优雅 Close**（停监听 → drain 在途请求 → 上游落盘/关库），
 //     不是杀进程树——它本来就在本进程里，没有进程可杀。
 //
-// 除此之外一切相同：状态机（starting / running / failed / stopped）、
-// 就绪判定（真的发一次 HTTP 探活，而不是「handler 构造完就算好」）、
-// Status 里的 Port / BaseURL 语义、Start / Restart / Shutdown 的行为。
+// 状态机（starting / running / failed / stopped）、就绪判定、Status 里的
+// Port / BaseURL 语义、Start / Restart / Shutdown 的行为，与「接缝」约定的完全一致。
 //
 // ── 为什么这层是四条接缝能一行不改的原因 ─────────────────────
 //
 // 接缝（前端控制台代理 / 服务端管理代理 / 领取执行器 / 数据面转发）全都只依赖
-// 「一个 RootURL + 一个就绪状态」，而这两个值**只由编排器产出**。把原生后端
-// 塞进编排器，接缝拿到的东西与对着子进程时**逐字段一致**，于是它们看不出区别，
-// 也不需要看出区别。
+// 「一个 RootURL + 一个就绪状态」，而这两个值**只由编排器产出**。上游是内置装配
+// 还是接管外部，接缝拿到的东西**逐字段一致**，于是它们看不出区别，也不需要看出区别。
 package orchestrator
 
 import (
@@ -107,13 +106,14 @@ func (o *Orchestrator) startNative(ctx context.Context, c config.ManagedProvider
 
 	lg := o.log.WithProvider(c.Name)
 
-	boot, ok := native.Lookup(c.Kind)
+	boot, ok := native.Resolve(c)
 	if !ok {
 		// 报错必须列出可用项：`kind: "workbudy"`（拼错）时，只有列出可选项
 		// 用户才看得出问题，否则他只看到「未注册」，会去怀疑是没编译进去。
 		return fail("未注册的原生实现", fmt.Errorf(
-			"kind=%q 没有对应的内置实现（可用：%s）",
-			c.Kind, strings.Join(native.Kinds(), "、")))
+			"kind=%q 没有对应的内置实现（可用：%s）；要接管已在运行的外部网关，"+
+				"请在环境变量里填 %s=http://…",
+			c.Kind, strings.Join(native.Kinds(), "、"), native.ExternalURLKey))
 	}
 
 	svc, err := boot(c, dataDir, lg)

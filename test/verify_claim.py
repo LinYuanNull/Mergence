@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""领取链路的真实验证：起一个假 zcode2api 网关 + 一个托管渠道指向它，
-然后走完整的 Mergence 领取流程。
+"""领取链路的真实验证：测试自己起一个假 zcode2api 网关，用「外部接管」把它接进
+一个托管渠道，然后走完整的 Mergence 领取流程。
+
+独立子进程模式已移除：托管渠道不再由 Mergence 拉起，而是接管一个**已经在运行**
+的外部网关（渠道 env 里的 MERGENCE_EXTERNAL_URL）。所以这里由测试自己把假网关
+起成独立服务 —— 与「用户已部署一套 zcode2api」的用法完全一致。
 
 与 verify.py 的差别：那边只验「配置能存、没渠道时给明确原因」，
 这边要验**真的领到了**——包括 Bearer 鉴权、回执翻译、1005 名额用完的
@@ -10,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -53,7 +58,28 @@ def get(base, path, timeout=30):
         return e.code, json.loads(e.read() or b"{}")
 
 
+def wait_tcp(port, timeout=15):
+    """等回环端口能连上（假网关起好了）。"""
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.2)
+    return False
+
+
+def start_fake(cmd, port, timeout=15):
+    """起假网关并等它就绪。外部接管下假网关归测试所有。"""
+    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not wait_tcp(port, timeout):
+        raise RuntimeError(f"假网关未在 {timeout}s 内监听 {port}：{cmd}")
+    return p
+
+
 def wait_port(proc, log, timeout=30):
+    """等 Mergence 自己的面板端口（从日志里取）。"""
     end = time.time() + timeout
     while time.time() < end:
         if os.path.isfile(log):
@@ -71,15 +97,39 @@ def wait_port(proc, log, timeout=30):
     return None
 
 
+def channel_cfg(name, api_key):
+    """一条「外部接管假 zcode 网关」的托管渠道配置。
+
+    api_key 就是网关后台密码（原生型下两者合并成 route key）。
+    """
+    return {
+        "kind": "managed", "name": name, "display_name": "ZCode 网关",
+        "preset": "zcode", "gateway_kind": "zcode",
+        "enabled": True, "expose": True,
+        "health_path": "/meta", "panel_path": "/admin/",
+        "model_prefix": "zcode-", "protocol": "chat",
+        "models": ["glm-4.6"], "api_keys": [api_key],
+        "env": {"MERGENCE_EXTERNAL_URL": f"http://127.0.0.1:{ZCODE_PORT}"},
+    }
+
+
+def wait_ready(base, name, tries=40):
+    for _ in range(tries):
+        time.sleep(0.5)
+        _st, ch = get(base, "/api/channels")
+        for c in ch.get("channels", []):
+            if c.get("name") == name and c.get("ready"):
+                return True
+    return False
+
+
 def main():
     if os.path.isdir(HOME):
         shutil.rmtree(HOME, ignore_errors=True)
     os.makedirs(os.path.join(HOME, "config"), exist_ok=True)
 
-    # 假网关**由 Mergence 托管启动**（和真实用法一致）：它注入 ZCODE_PORT，
-    # 假网关据此监听。不手动起是因为托管渠道的地址由 Mergence 分配，
-    # 手动起的固定端口对不上。
-    gz = None
+    # 假网关由**测试自己**起成独立服务；Mergence 通过外部接管把它接进来。
+    fake = start_fake([PY, FAKE_ZCODE, str(ZCODE_PORT)], ZCODE_PORT)
 
     env = dict(os.environ)
     env["MERGENCE_HOME"] = HOME
@@ -94,33 +144,13 @@ def main():
         base = f"http://127.0.0.1:{port}"
         print("Mergence 端口", port)
 
-        # 托管渠道：直接指向假网关（固定端口，省掉子进程编排）
-        print("→ 创建托管渠道（会拉起子进程，给足超时）", flush=True)
-        st, d = post(base, "/api/channels", {
-            "kind": "managed",
-            "name": "", "display_name": "ZCode 网关", "preset": "zcode",
-            "command": PY, "args": [FAKE_ZCODE, str(ZCODE_PORT)],
-            "dir": os.path.dirname(FAKE_ZCODE), "enabled": True, "expose": False,
-            "port_env_var": "ZCODE_PORT", "health_path": "/meta", "panel_path": "/admin/",
-            "model_prefix": "zcode-", "expose": True, "protocol": "chat",
-            "models": ["glm-4.6"],
-        }, timeout=150)
-        check("托管渠道创建成功（zcode 预设）", st == 200 and d.get("ok"), f"{st} {d}")
+        print("→ 创建托管渠道（外部接管假 zcode 网关）", flush=True)
+        st, d = post(base, "/api/channels", channel_cfg("", ADMIN_KEY), timeout=60)
+        check("托管渠道创建成功（zcode 预设 + 外部接管）", st == 200 and d.get("ok"), f"{st} {d}")
         ch_name = d.get("name", "")
 
-        # 等编排器把子进程拉起来
-        ready = False
-        for _ in range(40):
-            time.sleep(0.5)
-            st2, ch = get(base, "/api/channels")
-            for c in ch.get("channels", []):
-                if c.get("name") == ch_name and c.get("ready"):
-                    ready = True
-                    break
-            if ready:
-                break
-        check("zcode 子进程就绪（探活 /meta 命中）", ready,
-              json.dumps(ch, ensure_ascii=False)[:200])
+        check("zcode 渠道就绪（探活 /meta 命中）", wait_ready(base, ch_name),
+              f"渠道 {ch_name} 未就绪")
 
         # 打开开关 + 填后台密码
         st, d = post(base, "/api/claim/config", {
@@ -149,30 +179,27 @@ def main():
               and s2.get("today_done") is True,
               f"{st} {json.dumps(s2, ensure_ascii=False)[:200]}")
 
-        # 后台密码错误 → 必须明确提示，不能静默
-        post(base, "/api/claim/config", {"admin_key": "wrong-key"})
+        # 后台密码（= 渠道 route key）错误 → 必须明确提示，不能静默
+        post(base, "/api/channels", channel_cfg(ch_name, "wrong-key"), timeout=60)
+        wait_ready(base, ch_name)
         st, d = post(base, "/api/claim/now", {}, timeout=60)
         check("后台密码错误时明确报错",
               st == 200 and "密码" in (d.get("error") or "") + (d.get("skipped") or ""),
               f"{st} {json.dumps(d, ensure_ascii=False)[:200]}")
 
-        # 恢复正确密码，把子进程换成「名额用完」模式（改 args 会触发重启）
-        post(base, "/api/claim/config", {"admin_key": ADMIN_KEY})
-        st, d = post(base, "/api/channels", {
-            "kind": "managed", "name": ch_name, "display_name": "ZCode 网关",
-            "preset": "zcode", "command": PY, "args": [FAKE_ZCODE, "--fail-code", "1005"],
-            "dir": os.path.dirname(FAKE_ZCODE), "enabled": True, "expose": False,
-            "port_env_var": "ZCODE_PORT", "health_path": "/meta", "panel_path": "/admin/",
-            "model_prefix": "zcode-", "expose": True, "protocol": "chat",
-            "models": ["glm-4.6"],
-        }, timeout=150)
-        check("切到「名额用完」模式", st == 200 and d.get("ok"),
+        # 恢复正确密码，并把假网关换成「名额用完」模式（重起外部网关）
+        post(base, "/api/channels", channel_cfg(ch_name, ADMIN_KEY), timeout=60)
+        wait_ready(base, ch_name)
+        fake.terminate()
+        try:
+            fake.wait(timeout=10)
+        except Exception:
+            pass
+        fake = start_fake([PY, FAKE_ZCODE, str(ZCODE_PORT), "--fail-code", "1005"], ZCODE_PORT)
+        st, d = post(base, "/api/channels/action", {"name": ch_name, "action": "restart"}, timeout=60)
+        check("切到「名额用完」模式（重起外部网关 + 重启渠道）", st == 200 and d.get("ok"),
               f"{st} {json.dumps(d, ensure_ascii=False)[:200]}")
-        for _ in range(40):
-            time.sleep(0.5)
-            st2, ch2 = get(base, "/api/channels")
-            if any(c.get("name") == ch_name and c.get("ready") for c in ch2.get("channels", [])):
-                break
+        wait_ready(base, ch_name)
         st, d = post(base, "/api/claim/now", {}, timeout=60)
         check("名额用完时逐账号回执失败",
               st == 200 and d.get("ok") == 0 and d.get("fail") == 2,
@@ -183,7 +210,7 @@ def main():
               json.dumps(outs, ensure_ascii=False)[:200])
 
     finally:
-        for p in (mm, gz):
+        for p in (mm, fake):
             try:
                 if p and p.poll() is None:
                     p.terminate()

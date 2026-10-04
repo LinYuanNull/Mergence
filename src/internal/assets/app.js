@@ -274,13 +274,34 @@ function revealNavSection(view) {
   }
 }
 
-/* 常驻分组：不参与折叠（上游控制台的入口要随时可见）。
-   旧版本往 localStorage 存过 up:1，所以既要跳过恢复、也要清掉残留，
-   否则升级后这个分组会在启动时又被收起来。 */
-const NAVSEC_FIXED = ['up'];
+/* 不参与折叠的侧栏分组。**现在是空的**。
+ *
+ * 「控制台」曾在这里：当时的理由是「入口要随时可见」。但那是入口只有一份
+ * 的时候——现在同样的入口在主面板控制台的页签栏里都有一份，侧栏这份只是
+ * 快捷跳转，渠道一多反而把侧栏撑得半屏都是链接，所以改回可折叠。
+ *
+ * 常量保留而不是删掉：bindNavSections 仍需要「哪些分组要跳过折叠状态恢复」
+ * 这个概念（旧版本往 localStorage 存过 up:1，升级后必须先清掉残留，
+ * 否则分组会在启动时被旧状态收起来）。以后再加常驻分组，往这里塞名字即可。
+ */
+const NAVSEC_FIXED = [];
+
+/* NAVSEC_PURGE 一次性的折叠状态清理。
+ *
+ * 「控制台」分组在上一版里是强制常驻的，那时期它每次启动都会把 localStorage
+ * 里的 up 键删掉；但再往前的老版本往那里写过 up:1。直接从老版本升上来的用户，
+ * 第一次启动会看到控制台分组是收起的——而「入口不见了」正是这次要修的问题，
+ * 不能让它换个形式复现。所以清一次，之后用户的折叠选择照常保存。 */
+const NAVSEC_PURGE = { key: 'mm_navsec_purge_v1', drop: ['up'] };
 
 function bindNavSections() {
   const st = readNavSec();
+  try {
+    if (!localStorage.getItem(NAVSEC_PURGE.key)) {
+      NAVSEC_PURGE.drop.forEach((k) => delete st[k]);
+      localStorage.setItem(NAVSEC_PURGE.key, '1');
+    }
+  } catch (e) { /* 隐私模式忽略 */ }
   document.querySelectorAll('.nav-sec').forEach((el) => {
     if (NAVSEC_FIXED.indexOf(el.dataset.sec) >= 0) {
       el.classList.remove('closed');
@@ -309,6 +330,10 @@ function setView(name) {
   document.querySelectorAll('.views > .view').forEach((v) => {
     v.hidden = (v.id !== 'view-' + meta);
   });
+  // 控制台工具条（平台选择器 + 页签栏）只在控制台视图下出现。
+  // 它不随视图显隐地挂在 .views 里，而不是塞进某个视图内部：这样切页签时
+  // 它原地不动，十个 up-* 视图用起来像一个控制台。
+  $('conHead').hidden = meta.indexOf('up-') !== 0;
   $('ttl').textContent = VIEW_META[meta].t;
   $('subMeta').textContent = VIEW_META[meta].sub();
   Store.set({ view: meta });
@@ -346,10 +371,10 @@ function setView(name) {
   }
 }
 
-/* ── 上游控制台入口（侧栏） ─────────────────────────────
+/* ── 上游控制台入口 ─────────────────────────────────────
  *
- * 入口表只在这里定义一次，渲染与高亮共用。顺序按使用频率排：
- * 账号池/任务/模型是日常，配置与日志属于排查时才看。
+ * 入口表只在这里定义一次，**侧栏卡片与主面板的页签栏共用同一份**。
+ * 顺序按使用频率排：账号池/任务/模型是日常，配置与日志属于排查时才看。
  */
 const UP_VIEWS = [
   ['up-accounts', '账号池', '◍'],
@@ -360,6 +385,50 @@ const UP_VIEWS = [
   ['up-config', '配置', '⚙'],
   ['up-logs', '运行日志', '≡'],
 ];
+
+/* zcode2api 的原生视图（控制台形态 zcode）。
+ *
+ * 与 UP_VIEWS 是**两套不能混用**的表：它的管理 API 在 /admin/api，接口结构与
+ * 集成面板不兼容，能列的只有这三个专属视图。给不匹配的那类列出整套视图，
+ * 点进去只会 404 —— 入口看着有、实际不能用，比没有入口更糟。
+ *
+ * 放在这里而不是 zcode.js：侧栏卡片与主面板页签栏都要用它，两处口径必须一致。 */
+const ZCODE_VIEWS = [
+  ['up-zc-accounts', '账号池', '◍'],
+  ['up-zc-monitor', '运行监控', '▤'],
+  ['up-zc-settings', '网关设置', '⚙'],
+];
+
+/* upViewDefs 一个渠道的控制台入口表；null = 没有可嵌入的控制台。
+ *
+ * 「有哪些入口」完全由后端探测出的 console_kind 决定，前端不猜：
+ *   gateway -> 集成面板那 7 个视图（接口签名一致，直接复用）
+ *   zcode   -> 上面 3 个原生视图（专属适配）
+ *   web     -> 接不进来，只给一个外链；none -> 连外链都没有
+ *   unknown -> 子进程刚起、还没探出结果，调用方要「不下结论」而不是当成没有
+ * 判错的代价只是列错入口，不碰转发——但 404 的入口很伤，所以宁可慢一步。 */
+function upViewDefs(c) {
+  if (!c) return null;
+  if (c.console_kind === 'gateway') return UP_VIEWS;
+  if (c.console_kind === 'zcode') return ZCODE_VIEWS;
+  return null;
+}
+
+/* conViewFor 在主面板换平台时该落到哪个页签。
+ *
+ * 优先保留当前视图——用户是在「同一个控制台里换渠道对比数据」，把他扔回
+ * 第一个页签等于每换一次渠道都要重新点一遍。
+ *
+ * 但两个渠道的控制台形态可能不同（gateway 有 7 个视图、zcode 只有 3 个），
+ * 当前视图在新渠道上**不存在**时必须落到它的第一项：不然会切到一个没有
+ * 数据的页签，而内容区还留着上一个渠道的数字，比报错更容易让人看错。
+ * 形态还没探出来（defs 为 null）时不动视图——那时也说不清该落到哪。 */
+function conViewFor(name, view) {
+  const c = (Store.get().channels || []).find((x) => x.name === name);
+  const defs = upViewDefs(c);
+  if (!defs) return view;
+  return defs.some(([v]) => v === view) ? view : defs[0][0];
+}
 
 const UPCHAN_KEY = 'mm_upchan';
 const UPCARD_KEY = 'mm_upcards';
@@ -395,14 +464,14 @@ function renderUpConsoleNav() {
 
   const chans = (Store.get().channels || []).filter((c) => c.source === 'managed');
 
-  // 这个分组**常驻**：不随视图显隐，也不允许被收起。
+  // 这个分组**不随视图显隐**：控制台入口随时要用，让它们「先点一下某个
+  // 视图才出现」等于把入口藏起来（旧版就是这样）。
   //
-  // 之前是 `hidden = chans.length === 0`，而渠道列表只由 loadChannels()
-  // 塞进 Store，那个函数又只在 api/acct 视图被调用 —— 于是启动后必须先
-  // 点一下「积分型平台」入口，控制台入口才出现。入口要「先点某处」才可见，
-  // 等于把它藏起来了。
+  // 但它**可以被收起**：渠道一多，每张卡片平铺 7 个入口会把侧栏撑满，
+  // 而这些入口在主面板控制台的页签栏里都有一份。折叠状态由 bindNavSections
+  // 统一管；这里只保证它不被 hidden，绝不碰 closed —— 之前那句
+  // `group.classList.remove('closed')` 会让折叠彻底失效。
   group.hidden = false;
-  group.classList.remove('closed');
 
   // 选中的渠道被删掉后不能继续挂着：否则侧栏高亮不到任何一条，
   // 而上游请求还会按旧渠道名发出去。
@@ -411,6 +480,14 @@ function renderUpConsoleNav() {
     Store.set({ upChan: '' });
     rememberUpChan('');
   }
+
+  // 主面板的两处（控制台工具条、积分型平台页的入口区块）与侧栏同源，
+  // 必须每次都刷：它们各自有签名守卫，不会因为渠道列表每 3 秒轮询一次
+  // 就重建 DOM。放在下面那个提前返回**之前**，否则侧栏签名没变时
+  // 主面板这两处就永远不刷新了。
+  renderConHead(chans);
+  renderAcctConsole(chans);
+
   // 没渠道时也占位并说明原因：「这里本该有什么」比一块空白好懂。
   // 还没拿到状态时不下结论，否则会先闪一句「还没有积分型平台」。
   const loaded = !!Store.get().status;
@@ -454,19 +531,11 @@ function renderUpConsoleNav() {
  * 比没有入口更糟。
  */
 function upConsoleItems(c) {
-  if (c.console_kind === 'gateway') {
-    return UP_VIEWS.map(([v, label, icon]) =>
-      `<a class="nav-i sub" data-view="${v}" data-chan="${esc(c.name)}">
-        <i>${icon}</i><span>${esc(label)}</span></a>`).join('');
-  }
-  if (c.console_kind === 'zcode') {
-    // zcode2api：原生视图（账号池 / 运行监控 / 网关设置）。密码由 Mergence
-    // 服务端注入，浏览器不接触密码，所以查看无需输入面板密码。
-    return [
-      ['up-zc-accounts', '账号池', '◍'],
-      ['up-zc-monitor', '运行监控', '▤'],
-      ['up-zc-settings', '网关设置', '⚙'],
-    ].map(([v, label, icon]) =>
+  const defs = upViewDefs(c);
+  if (defs) {
+    // 密码由 Mergence 服务端注入（zcode 那套也是），浏览器不接触密码，
+    // 所以查看无需输入面板密码。
+    return defs.map(([v, label, icon]) =>
       `<a class="nav-i sub" data-view="${v}" data-chan="${esc(c.name)}">
         <i>${icon}</i><span>${esc(label)}</span></a>`).join('');
   }
@@ -481,6 +550,131 @@ function upConsoleItems(c) {
   }
   // 还没探出结果（子进程刚起）：不下结论，免得入口闪一下就消失
   return '<div class="nav-note">正在探测控制台…</div>';
+}
+
+/* renderConHead 刷新主面板控制台的工具条：平台选择器 + 页签栏 + 添加账号。
+ *
+ * 这是「把控制台合并成一个视图」的落点：无论切到哪个 up-* 视图，这一条
+ * 都在原处，页签只换高亮，所以十个视图用起来像一个控制台。
+ *
+ * 页签表与侧栏卡片取自同一个 upViewDefs，两处不可能各说各话；真的不一致时
+ * 用户会以为「有 4 个页签没显示出来」，比少列几个入口更难排查。
+ *
+ * 两个签名守卫是必需的：渠道列表每 3 秒轮询一次，无脑重建 innerHTML 会把
+ * 下拉框的展开态与页签的 hover 打断。
+ */
+function renderConHead(chans) {
+  const sel = $('conChan');
+  const tabs = $('conTabs');
+  const add = $('btnConAdd');
+  if (!sel || !tabs || !add) return;
+
+  // 当前平台：UP.chan 优先，它为空（刚启动、还没选过）时落到列表第一项。
+  // 只用于**显示**，不在这里改 UP.chan —— 渲染函数改全局状态的话，
+  // 「渠道列表一到就自动选中」会连带触发上游请求，副作用太隐蔽。
+  const cur = chans.find((c) => c.name === UP.chan) || chans[0] || null;
+
+  const selSig = chans.map((c) => [c.name, c.display_name, c.account_count].join('~')).join('|');
+  if (sel.dataset.sig !== selSig) {
+    sel.dataset.sig = selSig;
+    sel.innerHTML = chans.map((c) => {
+      const n = c.account_count;
+      const tag = n > 0 ? n + ' 个账号' : (n === 0 ? '尚未添加账号' : '账号数未知');
+      return `<option value="${esc(c.name)}">${esc(c.display_name || c.name)}（${tag}）</option>`;
+    }).join('');
+  }
+  if (cur) sel.value = cur.name;
+
+  const view = Store.get().view || '';
+  const defs = upViewDefs(cur);
+  const tabSig = [cur ? cur.name : '', view, cur ? cur.console_kind : '', cur ? (cur.panel_url || '') : ''].join('~');
+  if (tabs.dataset.sig !== tabSig) {
+    tabs.dataset.sig = tabSig;
+    if (!cur) {
+      tabs.innerHTML = '<span class="con-none">还没有积分型平台，'
+        + '到「添加平台」里创建后控制台入口会出现在这里</span>';
+    } else if (defs) {
+      tabs.innerHTML = defs.map(([v, label, icon]) =>
+        `<button type="button" data-con-view="${v}" class="${v === view ? 'on' : ''}">`
+        + `<i>${icon}</i><span>${esc(label)}</span></button>`).join('');
+    } else if (cur.console_kind === 'web') {
+      tabs.innerHTML = cur.panel_url
+        ? `<button type="button" data-con-ext="${esc(cur.panel_url)}">`
+          + '<i>↗</i><span>打开管理面板</span></button>'
+        : '<span class="con-none">该渠道没有可嵌入的控制台</span>';
+    } else if (cur.console_kind === 'none') {
+      tabs.innerHTML = '<span class="con-none">该渠道没有可接入的控制台</span>';
+    } else {
+      tabs.innerHTML = '<span class="con-none">正在探测控制台…</span>';
+    }
+  }
+
+  // 「添加账号」只对 gateway 形态有意义：zcode 的账号在它自己的账号池页里加
+  // （设备码登录 / 导入，接口完全不同），web / none 更没有账号池可加。
+  // 给它们挂一个点了会报错的按钮，比不挂更糟。
+  add.hidden = !(cur && cur.console_kind === 'gateway');
+  add.title = cur ? `向「${cur.display_name || cur.name}」的账号池添加账号` : '';
+}
+
+/* renderAcctConsole 「积分型平台」页顶部的控制台入口区块。
+ *
+ * 它存在的唯一理由是**入口可见**：原先点开一个渠道后，这一页上没有任何
+ * 通向账号池的路，用户只能去侧栏找——侧栏那一栏还可能被收起，
+ * 「添加积分型平台账号的入口找不到」就是这么来的。
+ *
+ * 显隐由设置里的「显示积分型平台控制台入口」(config.UI.AcctConsole) 决定，
+ * 缺省开。关掉只收这一块，**侧栏分组不受影响**：入口必须至少留一条可达路径，
+ * 否则「隐藏」就变成「功能没了」。
+ */
+function renderAcctConsole(chans) {
+  const box = $('acctConsole');
+  const list = $('acctConsoleList');
+  if (!box || !list) return;
+
+  const want = !(S.status && S.status.acct_console === false) && chans.length > 0;
+  box.hidden = !want;
+  if (!want) return;
+
+  const view = Store.get().view || '';
+  const sig = chans.map((c) => [c.name, c.display_name, c.ready ? 1 : 0, c.enabled ? 1 : 0,
+    c.account_count, c.console_kind, c.panel_url || ''].join('~')).join('|') + '#' + view;
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+
+  list.innerHTML = chans.map((c) => {
+    const st = !c.enabled ? '' : (c.ready ? 'ok' : 'warn');
+    const n = c.account_count;
+    const tag = n > 0 ? n + ' 个账号' : (n === 0 ? '尚未添加账号' : '账号数未知');
+    const defs = upViewDefs(c);
+    // 入口按钮指向什么，与侧栏卡片同一套判断；没有控制台的渠道给一句实话
+    // 而不是一个点不动的按钮。
+    if (defs) {
+      const opened = defs.some(([v]) => v === view);
+      return `<div class="ce-row">
+        <span class="ce-dot ${st}"></span>
+        <span class="nm">${esc(c.display_name || c.name)}</span>
+        <span class="dim">${esc(tag)}</span>
+        <span class="grow"></span>
+        <button class="ghost" data-con-open="${esc(c.name)}">${
+          opened ? '控制台已打开' : '打开控制台'}</button>
+      </div>`;
+    }
+    if (c.console_kind === 'web' && c.panel_url) {
+      return `<div class="ce-row">
+        <span class="ce-dot ${st}"></span>
+        <span class="nm">${esc(c.display_name || c.name)}</span>
+        <span class="dim">${esc(tag)} · 自带网页面板</span>
+        <span class="grow"></span>
+        <button class="ghost" data-con-ext="${esc(c.panel_url)}">打开管理面板</button>
+      </div>`;
+    }
+    const why = c.console_kind === 'none' ? '该渠道没有可接入的控制台' : '正在探测控制台…';
+    return `<div class="ce-row">
+      <span class="ce-dot ${st}"></span>
+      <span class="nm">${esc(c.display_name || c.name)}</span>
+      <span class="dim">${esc(tag)} · ${esc(why)}</span>
+    </div>`;
+  }).join('');
 }
 
 function bindUpCards() {
@@ -822,11 +1016,9 @@ function setKind(kind) {
     box.hidden = box.dataset.kind !== formKind;
   });
   $('kindHint').textContent = formKind === 'managed'
-    ? '积分型平台：拉起进程或在进程内运行，账号在「控制台」里管理。'
+    ? '积分型平台：上游跑在 Mergence 进程内，账号在「控制台」里管理。'
     : 'API 型平台：直接向 OpenAI 兼容端点发请求，不额外起进程。';
   fillPresets();
-  // 切到托管型时，若上一次选的是内置原生模板，子进程专有字段要立刻隐藏。
-  syncModeFields();
 }
 
 function currentPresets() {
@@ -848,13 +1040,9 @@ function applyPreset(id) {
   const p = currentPresets().find((x) => x.id === id);
   if (!p) return;
   if (formKind === 'managed') {
-    // 运行方式与网关种类也由模板带出来。原生型模板没有 command，全靠 mode+kind
-    // 让后端知道「装配哪个内置实现」，而不是去拉起一个不存在的可执行文件。
-    managedMode = p.mode || '';
+    // 网关种类由模板带出来：后端据此知道装配哪个内置实现，它同时也是控制台
+    // 形态与管理 API 前缀的契约依据（见后端 kindOfUpstream / panelAPIPrefixFor）。
     gatewayKind = p.kind || '';
-    $('fCmd').value = p.command || '';
-    $('fArgs').value = (p.args || []).join('\n');
-    $('fPortEnv').value = p.port_env_var || '';
     $('fHealthM').value = p.health_path || '';
     $('fPrefix').value = p.model_prefix || '';
     if (!$('fName').value.trim()) $('fName').value = p.label || '';
@@ -862,7 +1050,6 @@ function applyPreset(id) {
     // 积分平台预填官方折算价（如 WorkBuddy 0.05 元/积分），用户可改
     $('fCreditValue').value = p.credit_value > 0 ? p.credit_value : '';
     $('presetHint').textContent = [p.note, p.doc_url ? '项目：' + p.doc_url : ''].filter(Boolean).join(' · ');
-    syncModeFields();
   } else {
     $('fBase').value = p.base_url || '';
     $('fProtocol').value = p.protocol || 'chat';
@@ -887,7 +1074,7 @@ function openChannelForm(raw, forceKind) {
   Store.set({ fetched: [] });
   document.querySelectorAll('#chModal .field.err').forEach((f) => f.classList.remove('err'));
 
-  setKind(raw ? (raw.kind || (raw.command ? 'managed' : 'embedded')) : (forceKind || 'embedded'));
+  setKind(raw ? (raw.kind || 'embedded') : (forceKind || 'embedded'));
   $('chKind').classList.toggle('locked', !!raw);
 
   if (raw) {
@@ -908,15 +1095,9 @@ function openChannelForm(raw, forceKind) {
     $('fPriceCached').value = pr.cached_per_m != null ? pr.cached_per_m : '';
     $('fPriceOut').value = pr.output_per_m != null ? pr.output_per_m : '';
     $('fEnabled').checked = !!raw.enabled;
-    $('fCmd').value = raw.command || '';
-    $('fArgs').value = (raw.args || []).join('\n');
-    $('fDir').value = raw.dir || '';
     $('fDataDir').value = raw.data_dir || '';
-    $('fPortEnv').value = raw.port_env_var || '';
-    $('fFixedPort').value = raw.fixed_port || 0;
     $('fCreditValue').value = raw.credit_value > 0 ? raw.credit_value : '';
     $('fHealthM').value = raw.health_path || '';
-    $('fReady').value = raw.ready_timeout || '';
     $('fPanelAPI').value = raw.panel_api_prefix || '/panel/api';
     $('fPathPrefix').value = raw.path_prefix == null ? '/v1' : raw.path_prefix;
     $('fEnv').value = envToText(raw.env);
@@ -925,9 +1106,6 @@ function openChannelForm(raw, forceKind) {
     // 回填已识别的网关种类：保存时带回去。不回填的话，任何一次编辑都会把
     // kind 清空，平台唯一性校验随即失效（用户改个显示名就能绕过）。
     gatewayKind = raw.gateway_kind || '';
-    // 运行方式同样必须回显。不回显的话，任何一次编辑都会把原生渠道变回
-    // 「去拉起一个空 command」的子进程，渠道再也起不来。
-    managedMode = raw.mode || '';
     if (raw.preset_inferred) {
       // 该回填分支不调用 applyPreset，所以这行不会被覆盖。
       // 放在这里（本分支其它 presetHint 写入之后）追加一句来源说明。
@@ -945,14 +1123,13 @@ function openChannelForm(raw, forceKind) {
     document.querySelectorAll('#chModal .sec').forEach((d) => { d.open = true; });
   } else {
     ['fName', 'fPrefix', 'fBase', 'fKeys', 'fKeysM', 'fModels', 'fModelsPath',
-      'fHeaders', 'fTimeout', 'fProxy', 'fCmd', 'fArgs', 'fDir', 'fDataDir', 'fPortEnv',
-      'fHealthM', 'fReady', 'fEnv', 'fPriceIn', 'fPriceCached', 'fPriceOut']
+      'fHeaders', 'fTimeout', 'fProxy', 'fDataDir',
+      'fHealthM', 'fEnv', 'fPriceIn', 'fPriceCached', 'fPriceOut']
       .forEach((id) => { $(id).value = ''; });
     $('fProtocol').value = 'chat';
     $('fWeight').value = 1;
     $('fPriority').value = 0;
     $('fRetries').value = 1;
-    $('fFixedPort').value = 0;
     $('fCreditValue').value = '';
     $('fPanelAPI').value = '/panel/api';
     $('fPathPrefix').value = '/v1';
@@ -966,14 +1143,12 @@ function openChannelForm(raw, forceKind) {
       if (formKind === 'embedded' && list.length) { $('fPreset').value = list[0].id; applyPreset(list[0].id); }
     }
   }
-  // 只有新建才清空「网关种类 / 运行方式」——它们对新建而言尚未确定。
-  // 这一对重置以前是无条件执行的（放错位置），会把编辑时的回显值一并清掉：
-  // 保存后 kind 丢失（平台唯一性校验失效），原生渠道的 mode 丢失（退化成子进程）。
+  // 只有新建才清空「网关种类」——它对新建而言尚未确定。
+  // 这个重置以前是无条件执行的（放错位置），会把编辑时的回显值一并清掉：
+  // 保存后 kind 丢失（平台唯一性校验失效）。
   if (!raw) {
     gatewayKind = '';
-    managedMode = '';
   }
-  syncModeFields();
   mountChannelForm();
 }
 
@@ -981,24 +1156,6 @@ function openChannelForm(raw, forceKind) {
 // 编辑既有渠道时由 openChannelForm 从后端回显值填入；新建时为空，
 // 由后端 kindOfUpstream 按名称推断后落盘。
 let gatewayKind = '';
-
-// managedMode 当前托管型渠道的运行方式：'' / 'process' = 独立子进程；
-// 'native' = 进程内原生（Mergence 自己装配上游，不拉起任何可执行文件）。
-// 与 gatewayKind 一样：编辑时由 openChannelForm 回显，选模板时由 applyPreset 预填。
-let managedMode = '';
-
-// syncModeFields 按运行方式显隐「只有子进程才需要」的表单项。
-//
-// 原生型跑在 Mergence 进程内：没有可执行文件，也没有端口环境变量可供注入，
-// 把「启动命令（标着必填）」「端口环境变量」「固定端口」留在原生渠道的表单里，
-// 用户会以为漏填了什么；而这些字段真填了，后端反而会把整个渠道禁用
-// （见 config 的 normalize：原生型带 command 直接禁用）。宁可不显示。
-function syncModeFields() {
-  const native = formKind === 'managed' && managedMode === 'native';
-  document.querySelectorAll('#chModal [data-mode]').forEach((el) => {
-    el.hidden = native && el.dataset.mode === 'process';
-  });
-}
 
 function collectForm() {
   const managed = formKind === 'managed';
@@ -1026,18 +1183,9 @@ function collectForm() {
   };
   if (managed) {
     Object.assign(body, {
-      // mode 决定后端是拉起子进程还是装配进程内实现；空值 = 子进程。
-      // 新建托管渠道时表单默认子进程，选到内置原生模板才会变成 native。
-      mode: managedMode,
-      command: $('fCmd').value.trim(),
-      args: lines($('fArgs').value),
-      dir: $('fDir').value.trim(),
       data_dir: $('fDataDir').value.trim(),
-      port_env_var: $('fPortEnv').value.trim(),
-      fixed_port: intOf($('fFixedPort').value, 0),
       credit_value: floatOf($('fCreditValue').value) || 0,
       health_path: $('fHealthM').value.trim(),
-      ready_timeout: $('fReady').value.trim(),
       panel_api_prefix: $('fPanelAPI').value.trim(),
       path_prefix: $('fPathPrefix').value.trim(),
       env: parseEnv($('fEnv').value),
@@ -1467,6 +1615,7 @@ function loadSettings() {
   if (document.activeElement !== $('fPort')) $('fPort').value = st.panel_port || 0;
   renderKey(st.access_key || '');
   renderCloseBehavior(st.minimize_to_tray !== false);
+  renderAcctConsolePref(st.acct_console !== false);
   loadClaim();
 }
 
@@ -1523,6 +1672,36 @@ async function saveCloseBehavior(on) {
     toast(d.note || '已保存', 'ok');
   } catch (e) {
     renderCloseBehavior(S.status ? S.status.minimize_to_tray !== false : true);
+    toast('保存失败：' + e.message, 'err');
+  }
+}
+
+/* renderAcctConsolePref 回显「显示积分型平台控制台入口」开关。
+ *
+ * 判据写成 `!== false` 而不是直接取值：老配置里没有 ui.acct_console 字段，
+ * 缺字段必须落到「显示」——那是这一块自诞生以来的行为，也是入口可见的前提。
+ */
+function renderAcctConsolePref(on) {
+  $('fAcctConsole').checked = !!on;
+  $('acctConsoleState').textContent = on ? '在「积分型平台」页显示' : '已在「积分型平台」页收起';
+}
+
+/* saveAcctConsole 改「控制台入口」显隐，切换即存。
+ *
+ * 存完立刻重画那一块：用户不必刷新、也不用重启就能看到结果。存失败要把开关
+ * 拨回原值——否则界面显示「已收起」而配置里还是开，两边不一致最难排查。
+ */
+async function saveAcctConsole(on) {
+  const want = !!on;
+  try {
+    const d = await post('/api/settings/console', { acct_console: want }, 15000);
+    const v = typeof d.acct_console === 'boolean' ? d.acct_console : want;
+    if (S.status) S.status.acct_console = v;
+    renderAcctConsolePref(v);
+    renderAcctConsole((Store.get().channels || []).filter((c) => c.source === 'managed'));
+    toast(d.note || '已保存', 'ok');
+  } catch (e) {
+    renderAcctConsolePref(S.status ? S.status.acct_console !== false : true);
     toast('保存失败：' + e.message, 'err');
   }
 }
@@ -1645,6 +1824,8 @@ function bind() {
   ['fCloseTray', 'fCloseExit'].forEach((id) => {
     $(id).addEventListener('change', () => saveCloseBehavior($('fCloseTray').checked));
   });
+  // 同上，只有一个开关，切换即存。
+  $('fAcctConsole').addEventListener('change', () => saveAcctConsole($('fAcctConsole').checked));
   $('btnKeyShow').onclick = () => {
     Store.set({ keyShown: !Store.get().keyShown });
     renderKey((S.status && S.status.access_key) || '');
@@ -1657,6 +1838,39 @@ function bind() {
   $('btnShowWin').onclick = () => {
     if (!desktopShowWindow()) toast('该功能需要在桌面窗口内使用', 'err');
   };
+
+  // ── 控制台工具条：平台选择器 + 页签栏 ────────────────────
+  $('conChan').addEventListener('change', (ev) => {
+    const name = ev.target.value;
+    if (!name) return;
+    openUpView(name, conViewFor(name, Store.get().view));
+  });
+  $('conTabs').addEventListener('click', (ev) => {
+    const ext = ev.target.closest('[data-con-ext]');
+    if (ext) { desktopOpenExternal(ext.dataset.conExt); return; }
+    const b = ev.target.closest('[data-con-view]');
+    // 用下拉框当前显示的值而不是 UP.chan：UP.chan 在「刚进控制台还没点过
+    // 任何入口」时是空的，而那时页签已经可点，按 UP.chan 会切到空渠道。
+    if (b) openUpView($('conChan').value || UP.chan, b.dataset.conView);
+  });
+  $('btnConAdd').onclick = () => {
+    const name = $('conChan').value || UP.chan;
+    if (!name) return;
+    // 必须先把渠道落到全局再开弹层：弹层里的授权 / 导入都是发给 UP.chan 的，
+    // 只改下拉框的值而不改它，请求会发到上一个渠道去。
+    if (UP.chan !== name) openUpView(name, conViewFor(name, Store.get().view));
+    openAddAccount();
+  };
+  // 「积分型平台」页顶部的入口区块：点渠道进它的第一个控制台视图（账号池）
+  // —— 那一页才有「添加账号」，这是这一块最主要的用途。
+  $('acctConsoleList').addEventListener('click', (ev) => {
+    const ext = ev.target.closest('[data-con-ext]');
+    if (ext) { desktopOpenExternal(ext.dataset.conExt); return; }
+    const b = ev.target.closest('[data-con-open]');
+    if (!b) return;
+    const defs = upViewDefs((Store.get().channels || []).find((x) => x.name === b.dataset.conOpen));
+    if (defs) openUpView(b.dataset.conOpen, defs[0][0]);
+  });
   $('btnCopyURL').onclick = async () => {
     try { await copyText($('epURL').textContent); toast('已复制', 'ok'); }
     catch (e) { toast('复制失败', 'err'); }

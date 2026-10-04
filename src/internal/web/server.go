@@ -267,6 +267,7 @@ func (s *Server) buildMux() *http.ServeMux {
 	mux.HandleFunc("POST /api/access-key/regenerate", s.handleAccessKeyRegen)
 	mux.HandleFunc("POST /api/settings/port", s.handleSettingsPort)
 	mux.HandleFunc("POST /api/settings/close", s.handleSettingsClose)
+	mux.HandleFunc("POST /api/settings/console", s.handleSettingsConsole)
 
 	// ── 对外 OpenAI 兼容出口
 	// 中间件做 Bearer 校验；handler 保持纯净（契约只有转发）。
@@ -388,8 +389,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		}
 		providers = append(providers, map[string]any{
 			"name": st.Name, "display_name": st.DisplayName, "state": st.State,
-			"port": st.Port, "base_url": st.BaseURL, "pid": st.PID,
-			"last_err": st.LastErr, "fixed_port": st.FixedPort,
+			"port": st.Port, "base_url": st.BaseURL,
+			"last_err":   st.LastErr,
 			"started_at": st.StartedAt,
 		})
 	}
@@ -409,6 +410,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	// 而不是问窗口层：面板可能被浏览器以外的客户端打开，
 	// 那时窗口层的值对不上界面显示的端口同理。
 	minimizeToTray := s.currentConfig().Tray.MinimizeToTray
+	// 同理由当前配置取：面板显示偏好也要能在刷新后回显到设置页。
+	acctConsole := s.currentConfig().UI.AcctConsole
 
 	writeJSON(w, map[string]any{
 		"service":          "mergence",
@@ -417,6 +420,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		"base_url":         s.BaseURL(),
 		"panel_port":       s.Port(),
 		"minimize_to_tray": minimizeToTray,
+		"acct_console":     acctConsole,
 		"access_key":       s.currentAccessKey(),
 		"running":          running,
 		"total":            len(providers),

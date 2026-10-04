@@ -37,9 +37,6 @@ const (
 	kindManaged  = "managed"
 )
 
-// 网关种类（配置里落盘的识别结果）。newapi 特判：它天生支持多实例。
-const gatewayKindNewAPI = "newapi"
-
 // handlePresets 返回内置模板（内嵌型 + 托管型）。
 func (s *Server) handlePresets(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{
@@ -94,7 +91,7 @@ type channelInput struct {
 	DisplayName string `json:"display_name"`
 	Enabled     bool   `json:"enabled"`
 	Preset      string `json:"preset,omitempty"`
-	// GatewayKind 识别出来的网关种类（zcode / workbuddy / newapi）。
+	// GatewayKind 识别出来的网关种类（zcode / workbuddy / trae）。
 	// 与上面的 Kind（内嵌/托管）是两回事，别混。
 	GatewayKind string            `json:"gateway_kind,omitempty"`
 	Protocol    string            `json:"protocol"`
@@ -117,30 +114,22 @@ type channelInput struct {
 	Price config.ChannelPrice `json:"price"`
 
 	// ── 托管型专有
-	// Mode 运行方式：空 / "process" = 独立子进程；"native" = 进程内原生。
-	// 老配置没有这个字段 ⇒ 空值必须解释成子进程，见 config.ManagedProvider.Mode。
-	Mode          string   `json:"mode,omitempty"`
-	Command       string   `json:"command"`
-	Args          []string `json:"args"`
-	Dir           string   `json:"dir"`
-	DataDir       string   `json:"data_dir"`
-	PortEnvVar    string   `json:"port_env_var"`
-	FixedPort     int      `json:"fixed_port"`
-	ReadyTimeout  string   `json:"ready_timeout"`
-	ShutdownGrace string   `json:"shutdown_grace"`
-	PanelPath     string   `json:"panel_path"`
+	// DataDir 该渠道的数据目录（账号、状态、配置都在这）。留空表示
+	// 运行根/data/instances/<渠道名>/data。
+	DataDir   string `json:"data_dir"`
+	PanelPath string `json:"panel_path"`
 	// PathPrefix 上游 API 的路径前缀，缺省 /v1；显式 "" 表示没有前缀。
 	PathPrefix *string           `json:"path_prefix"`
 	Env        map[string]string `json:"env"`
-	// Expose 是否把该子进程注册为可路由渠道。false = 只托管、不出现在模型列表里。
+	// Expose 是否把该渠道注册为可路由渠道。false = 只托管、不出现在模型列表里。
 	Expose bool `json:"expose"`
 
 	// CreditValue 每积分价值（元），积分型平台的实际花费折算用。0 = 未配置。
 	CreditValue float64 `json:"credit_value"`
 
 	// PresetInferred 仅用于**出参**（handleChannelRaw）：为 true 表示返回的
-	// Preset 是按当前 command/args/health_path 推断出来的，而不是配置里记的值
-	// （老配置没有 preset 字段）。前端据此可区分「模板回显」与「推断回显」。
+	// Preset 是按渠道的 kind 推断出来的，而不是配置里记的值（老配置没有 preset
+	// 字段）。前端据此可区分「模板回显」与「推断回显」。
 	// 入参里带上它也无副作用——保存时只取 Preset，不会写这个标志。
 	PresetInferred bool `json:"preset_inferred,omitempty"`
 }
@@ -174,12 +163,11 @@ func (in *channelInput) toManaged() config.ManagedProvider {
 		Preset: in.Preset,
 		// GatewayKind 落盘识别结果，供后续判重与面板代理使用。
 		Kind: in.GatewayKind,
-		// Mode 决定它是子进程还是进程内原生；空值即子进程（见 config 的同名字段）。
-		Mode:    in.Mode,
-		Command: in.Command, Args: in.Args, Dir: in.Dir, DataDir: in.DataDir,
-		PortEnvVar: in.PortEnvVar, FixedPort: in.FixedPort,
-		HealthPath: in.HealthPath, ReadyTimeout: in.ReadyTimeout,
-		ShutdownGrace: in.ShutdownGrace, PanelPath: in.PanelPath, Env: in.Env,
+		// 托管型只有进程内原生一种形态，Mode 由服务端固定写死。老配置里的
+		// 空值 / "process" 会被 config 的 normalize 明确报错并禁用（见同名字段）。
+		Mode:       config.ModeNative,
+		DataDir:    in.DataDir,
+		HealthPath: in.HealthPath, PanelPath: in.PanelPath, Env: in.Env,
 		CreditValue: in.CreditValue,
 	}
 	if in.Expose {
@@ -307,7 +295,6 @@ func (s *Server) upsertManaged(w http.ResponseWriter, in *channelInput) {
 	if in.GatewayKind == "" {
 		in.GatewayKind = gatewayKindOf(config.ManagedProvider{
 			Name: in.Name, DisplayName: in.DisplayName, Preset: in.Preset,
-			Command: in.Command, Args: in.Args,
 		})
 	}
 
@@ -321,8 +308,7 @@ func (s *Server) upsertManaged(w http.ResponseWriter, in *channelInput) {
 	skipName := firstNonEmptyStr(in.OriginalName, in.Name)
 	if in.GatewayKind != "" && gatewayKindTaken(cur, in.GatewayKind, skipName) {
 		writeJSONStatus(w, http.StatusConflict, map[string]any{
-			"error": fmt.Sprintf("已存在一个 %s 平台，不能重复添加（new-api 除外，它支持多个实例）",
-				gatewayLabel(in.GatewayKind)),
+			"error": fmt.Sprintf("已存在一个 %s 平台，不能重复添加", gatewayLabel(in.GatewayKind)),
 		})
 		return
 	}
@@ -606,7 +592,10 @@ func (s *Server) handleChannelAdminKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	up := ch.Upstream()
-	if up.Source != "managed" {
+	// 判据是 Hosted（托管型子进程 or 进程内原生），不是「是不是子进程」：
+	// 原生型虽然跑在本进程内，但它同样自带 /panel/api/*（或 /admin/api/*）
+	// 管理 API，改密接口正是要打它。用 == "managed" 会把所有原生渠道挡在门外。
+	if !up.Source.Hosted() {
 		writeJSONStatus(w, http.StatusNotImplemented, map[string]any{
 			"error": "内嵌型渠道没有独立的网关设置", "code": "not_managed"})
 		return
@@ -614,7 +603,7 @@ func (s *Server) handleChannelAdminKey(w http.ResponseWriter, r *http.Request) {
 	if !up.Enabled || !ch.Ready() {
 		reason := ch.Status().ReadyReason
 		if reason == "" {
-			reason = "子进程未运行"
+			reason = "本地服务未运行"
 		}
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{
 			"error": "网关未就绪，改不了它的密码（" + reason + "）", "code": "channel_not_ready"})
@@ -669,45 +658,27 @@ func (s *Server) handleChannelAdminKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── 原生型：route key 是后台密码的**真源**，所以还要把新值写进渠道配置 ──
+	// ── route key 是后台密码的**真源**，所以还要把新值写进渠道配置 ──
 	//
-	// 内嵌形态下「两处」变成了「一处存储 + 一处覆盖」：密码存在网关库（上面
+	// 原生形态下「两处」变成了「一处存储 + 一处覆盖」：密码存在网关库（上面
 	// 刚 PUT 成功），而 native/zcode 每次装配都会用 route key 覆盖它
 	// （WithForcedSetting）。若这里不同步 route key，下次重启就又把密码
 	// 压回旧值 —— 那正是「只改一边」故障换了个方向。
-	//
-	// 老式子进程形态不需要这一步：它的密码本就存在网关侧，Mergence 只负责
-	// 转发时注入；本机唯一的那份副本（Claim.AdminKey）在下面统一写。
-	if up.Source == provider.SourceNative {
-		if _, _, err := s.saveConfig(func(c *config.Config) {
-			for i := range c.Managed {
-				if c.Managed[i].Name == up.Name && c.Managed[i].Route != nil {
-					c.Managed[i].Route.APIKey = newKey
-				}
+	if _, _, err := s.saveConfig(func(c *config.Config) {
+		for i := range c.Managed {
+			if c.Managed[i].Name == up.Name && c.Managed[i].Route != nil {
+				c.Managed[i].Route.APIKey = newKey
 			}
-		}); err != nil {
-			writeJSONStatus(w, http.StatusBadGateway, map[string]any{
-				"error": "网关密码已改成新值，但写入渠道配置失败：" + err.Error() +
-					"；请到该渠道的「路由密钥」里再填一次同一个密码",
-				"upstream_changed": true, "code": "partial"})
-			return
 		}
-		s.lg.Info("原生网关后台密码已修改（route key 即唯一真源）", "channel", up.Name)
-		writeJSON(w, map[string]any{"ok": true, "synced": []string{"gateway", "route_key"}})
-		return
-	}
-
-	// ── 老式子进程：网关已改，接着把同一个值写进本机配置 ──
-	if _, _, err := s.saveConfig(func(c *config.Config) { c.Claim.AdminKey = newKey }); err != nil {
+	}); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]any{
-			"error": "网关密码已改成新值，但写入本机配置失败：" + err.Error() +
-				"；请到「设置 → 限时套餐自动领取」再填一次同一个密码",
+			"error": "网关密码已改成新值，但写入渠道配置失败：" + err.Error() +
+				"；请到该渠道的「路由密钥」里再填一次同一个密码",
 			"upstream_changed": true, "code": "partial"})
 		return
 	}
-	// 日志只说改了哪条渠道：密码属于凭据，不落日志。
-	s.lg.Info("网关后台密码已修改，两处同步一致", "channel", up.Name)
-	writeJSON(w, map[string]any{"ok": true, "synced": []string{"gateway", "mergence"}})
+	s.lg.Info("原生网关后台密码已修改（route key 即唯一真源）", "channel", up.Name)
+	writeJSON(w, map[string]any{"ok": true, "synced": []string{"gateway", "route_key"}})
 }
 
 // channelStatuses 渠道状态，外加面板要用的补充字段。
@@ -783,35 +754,20 @@ func (s *Server) handleChannelRaw(w http.ResponseWriter, r *http.Request) {
 		out := channelInput{
 			Kind: kindManaged, Name: m.Name, DisplayName: m.DisplayName,
 			Enabled: m.Enabled, Preset: m.Preset,
-			// Mode 必须回显：前端保存时原样带回来。不回显的话，任何一次编辑都会
-			// 把 mode 清成空值 —— 而空值等于子进程，于是一个原生渠道会被
-			// 「编辑一下」就变成去拉起一个不存在的可执行文件。
-			Mode: m.Mode,
 			// 回显已识别的网关种类：前端保存时会把它带回来。不回显的话，
 			// 任何一次编辑都会把 kind 清空，唯一性校验随即失效。
 			GatewayKind: gatewayKindOf(*m),
-			Command:     m.Command, Args: m.Args, Dir: m.Dir, DataDir: m.DataDir,
-			PortEnvVar: m.PortEnvVar, FixedPort: m.FixedPort,
-			HealthPath: m.HealthPath, ReadyTimeout: m.ReadyTimeout,
-			ShutdownGrace: m.ShutdownGrace, PanelPath: m.PanelPath, Env: m.Env,
+			DataDir:     m.DataDir,
+			HealthPath:  m.HealthPath, PanelPath: m.PanelPath, Env: m.Env,
 			CreditValue: m.CreditValue,
 			ModelSource: "auto", Protocol: "chat", Weight: 1,
 		}
 		// 老配置里没存 preset（该字段是后加的），直接回空会让前端下拉框停在
-		// 第一个选项——于是 zcode 渠道被显示成 workbuddy。这里按当前的
-		// command/args/health_path 推断一次兜底，并标记这是推断值而非记录值。
+		// 第一个选项——于是 zcode 渠道被显示成 workbuddy。kind 就是内置实现名，
+		// 也正是预设 id（workbuddy / zcode / trae），照着找即可，不必去猜。
 		if out.Preset == "" {
-			// 原生型没有 command 可当锚点，InferManagedPreset 只会落到
-			// 「自定义托管进程（空白）」上。它的 kind 就是内置实现名，也正是
-			// 预设 id（workbuddy / zcode / trae），直接照着找，别去猜。
-			if m.Native() {
-				if p, ok := provider.ManagedPresetByKind(m.Kind); ok {
-					out.Preset, out.PresetInferred = p.ID, true
-				}
-			} else if inferred := provider.InferManagedPreset(
-				m.Command, m.Args, m.HealthPath, m.PortEnvVar); inferred != "" {
-				out.Preset = inferred
-				out.PresetInferred = true
+			if p, ok := provider.ManagedPresetByKind(m.Kind); ok {
+				out.Preset, out.PresetInferred = p.ID, true
 			}
 		}
 		if m.Route != nil {
@@ -939,9 +895,9 @@ func (s *Server) handleChannelModels(w http.ResponseWriter, r *http.Request) {
 
 // resolveUpstream 把面板入参解析成一个可用于测试 / 拉模型的上游。
 //
-// 托管型的地址不来自配置，而来自子进程当前监听的端口 —— 所以对已保存的托管型
-// 渠道，这里要从编排器取实时地址；没跑起来就直接说明原因，而不是拿一个空地址
-// 去发请求（那会给出一个看不懂的连接错误）。
+// 托管型的地址不来自配置，而来自实例当前监听的端口（进程内原生服务绑回环随机端口）
+// —— 所以对已保存的托管型渠道，这里要从编排器取实时地址；没跑起来就直接说明原因，
+// 而不是拿一个空地址去发请求（那会给出一个看不懂的连接错误）。
 func (s *Server) resolveUpstream(in *channelInput) (*provider.Upstream, error) {
 	cur := s.currentConfig()
 
@@ -954,15 +910,14 @@ func (s *Server) resolveUpstream(in *channelInput) (*provider.Upstream, error) {
 		}
 	}
 
-	// 只给了 name（或只有前端必然带的空壳字段）：按已保存的渠道测
-	if strings.TrimSpace(in.Name) != "" && strings.TrimSpace(in.BaseURL) == "" &&
-		strings.TrimSpace(in.Command) == "" && !in.Expose {
+	// 只给了 name（没有内嵌型才有的 BaseURL）：按已保存的渠道测
+	if strings.TrimSpace(in.Name) != "" && strings.TrimSpace(in.BaseURL) == "" && !in.Expose {
 		if m := findManaged(cur, in.Name); m != nil {
 			if st, ok := s.liveManaged(m.Name); ok {
 				up := provider.FromManaged(*m, st.BaseURL, true, "")
 				return &up, nil
 			}
-			return nil, fmt.Errorf("渠道 %q 的子进程未在运行，请先启动它再测试", in.Name)
+			return nil, fmt.Errorf("渠道 %q 的实例未在运行，请先启动它再测试", in.Name)
 		}
 		if e := findEmbedded(cur, in.Name); e != nil {
 			up := provider.FromEmbedded(*e)
@@ -972,12 +927,6 @@ func (s *Server) resolveUpstream(in *channelInput) (*provider.Upstream, error) {
 	}
 
 	if in.kind() == kindManaged {
-		// 进程相关字段改了但还没保存 —— 此时「测试」测的是**旧进程**，
-		// 结果会与实际保存后的行为不符。直接说清楚，别给一个看似通过的假信号。
-		if m := findManaged(cur, in.Name); m != nil && processSpecChanged(*m, in) {
-			return nil, fmt.Errorf(
-				"进程相关配置已改动，需要先保存才能测试（当前能测到的是正在运行的旧进程）")
-		}
 		// 托管型未保存时地址只能从「已经在跑的实例」取。若名字对不上就说明原因，
 		// 而不是编一个地址出来。
 		if st, ok := s.liveManaged(in.Name); ok {
@@ -985,7 +934,7 @@ func (s *Server) resolveUpstream(in *channelInput) (*provider.Upstream, error) {
 			return &up, nil
 		}
 		return nil, fmt.Errorf(
-			"托管型渠道的地址来自正在运行的子进程；请先保存并启动 %q 再测试", in.Name)
+			"托管型渠道的地址来自正在运行的实例；请先保存并启动 %q 再测试", in.Name)
 	}
 
 	// 内嵌型：面板传来的可能是部分字段，走一次 Parse 补齐默认值
@@ -1001,46 +950,6 @@ func (s *Server) resolveUpstream(in *channelInput) (*provider.Upstream, error) {
 	}
 	up := provider.FromEmbedded(parsed.Embedded[0])
 	return &up, nil
-}
-
-// processSpecChanged 判断「影响子进程本身」的字段是否被改动过。
-func processSpecChanged(m config.ManagedProvider, in *channelInput) bool {
-	return m.Command != strings.TrimSpace(in.Command) ||
-		m.Dir != strings.TrimSpace(in.Dir) ||
-		m.PortEnvVar != strings.TrimSpace(in.PortEnvVar) ||
-		m.FixedPort != in.FixedPort ||
-		!sameStrings(m.Args, in.Args) ||
-		// 前缀改了等于换了个端点，测试时拿旧地址去试会给出误导性的「通过」
-		!samePathPrefix(m.Route, in.PathPrefix)
-}
-
-func samePathPrefix(r *config.RouteSpec, want *string) bool {
-	cur := ""
-	if r != nil && r.PathPrefix != nil {
-		cur = *r.PathPrefix
-	} else {
-		cur = "/v1" // 缺省值
-	}
-	if want == nil {
-		return true // 前端没提交该字段，视为不改
-	}
-	v := strings.Trim(strings.TrimSpace(*want), "/")
-	if v != "" {
-		v = "/" + v
-	}
-	return cur == v
-}
-
-func sameStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // liveManaged 取某个托管实例的实时状态。
@@ -1205,8 +1114,6 @@ func gatewayLabel(kind string) string {
 		return "WorkBuddy"
 	case "trae":
 		return "Trae"
-	case gatewayKindNewAPI:
-		return "new-api"
 	default:
 		return kind
 	}
@@ -1218,12 +1125,10 @@ func gatewayLabel(kind string) string {
 // 名字拦不住重复；而 zcode2api / wb2api 这类进程在同一台机器上跑两个实例没有意义
 // ——它们各自持有账号池与配置目录，第二个要么抢端口、要么数据互相覆盖。
 //
-// newapi 豁免：new-api 本身是「多渠道聚合底座」，一个系统里跑多个实例是它的常规用法。
-//
 // skipName 用于「编辑自己」的场景：改自己的字段不算撞车。
 func gatewayKindTaken(c *config.Config, kind, skipName string) bool {
 	kind = strings.TrimSpace(kind)
-	if kind == "" || kind == gatewayKindNewAPI {
+	if kind == "" {
 		return false
 	}
 	for i := range c.Managed {
@@ -1237,34 +1142,29 @@ func gatewayKindTaken(c *config.Config, kind, skipName string) bool {
 	return false
 }
 
-// gatewayKindOf 读配置里的 kind；为空时回退到特征识别（兼容老配置）。
+// gatewayKindOf 读配置里的 kind；为空时按 preset 兜底（兼容老配置）。
 //
-// 识别信号只认**客观事实**——启动命令（command/args）与预设 id，**不认
-// name/display_name**。理由：显示名是用户随手起的，把渠道叫「ZCode 网关」
-// 不代表它跑的是 zcode；拿名字判重会把正常渠道误判成重复（e2e 领取测试
-// 正是被这个坑到的：它的测试渠道显示名就叫「ZCode 网关」）。
+// 识别信号只认**客观事实**——kind 与预设 id，**不认 name/display_name**。
+// 理由：显示名是用户随手起的，把渠道叫「ZCode 网关」不代表它跑的是 zcode；
+// 拿名字判重会把正常渠道误判成重复（e2e 领取测试正是被这个坑到的：它的测试
+// 渠道显示名就叫「ZCode 网关」）。
 //
-// preset 仍然算事实：它由「创建时选了哪个模板」落盘，不是用户能随手改的
-// 显示文字。老配置里可能为空，那时靠 command/args 兜住。
+// preset 仍然算事实：它由「创建时选了哪个模板」落盘，不是用户能随手改的显示
+// 文字。老配置里可能为空——那时启动命令是唯一线索，而 command/args 随子进程
+// 模式一起移除了，所以只能返回空（未知），不再硬猜。
 //
 // 存了 kind 的老配置也不受影响——kind 优先，压根不看别的。
 func gatewayKindOf(m config.ManagedProvider) string {
 	if k := strings.TrimSpace(m.Kind); k != "" {
 		return k
 	}
-	facts := strings.ToLower(m.Command + " " + strings.Join(m.Args, " ") + " " + m.Preset)
-	switch {
-	case strings.Contains(facts, "zcode"), strings.Contains(facts, "cli.py"):
+	switch strings.ToLower(strings.TrimSpace(m.Preset)) {
+	case "zcode":
 		return "zcode"
-	case strings.Contains(facts, "wb2api"), strings.Contains(facts, "wb2a"),
-		strings.Contains(facts, "workbuddy"):
+	case "workbuddy":
 		return "workbuddy"
-	case strings.Contains(facts, "trae"):
-		// trae 只有 preset 这一个可靠信号（老配置的 command 是解释器名 `node`，
-		// 不具区分度，不能作锚点）。所以只认 preset 里出现 trae 的情况。
+	case "trae":
 		return "trae"
-	case strings.Contains(facts, "new-api"), strings.Contains(facts, "newapi"):
-		return gatewayKindNewAPI
 	}
 	return ""
 }

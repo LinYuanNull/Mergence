@@ -229,7 +229,7 @@ func newTestMetricsServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = lg.Close() })
 	home := t.TempDir()
-	s := New(lg, orchestrator.New(t.TempDir(), lg, nil), provider.NewRegistry(lg), home)
+	s := New(lg, orchestrator.New(t.TempDir(), lg), provider.NewRegistry(lg), home)
 	s.SetConfig(config.Default(), filepath.Join(home, "mergence.json"))
 	t.Cleanup(func() { _ = s.store.Close() })
 	return s

@@ -137,7 +137,12 @@ func (r *Runtime) Close(ctx context.Context) error {
 	var err error
 	r.once.Do(func() {
 		_ = r.srv.Shutdown(ctx)
-		err = r.ln.Close()
+		// Shutdown 已经关过监听（它把监听纳管了），这里的第二次 Close 会返回
+		// net.ErrClosed —— 那是正常结果，不是错误。是否命中取决于 Close 与
+		// Serve 注册监听的先后（启动即关的竞态），所以必须容忍，否则偶发失败。
+		if cerr := r.ln.Close(); cerr != nil && !errors.Is(cerr, net.ErrClosed) {
+			err = cerr
+		}
 	})
 	return err
 }

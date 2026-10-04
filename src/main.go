@@ -96,16 +96,9 @@ func main() {
 		defer release()
 	}
 
-	// ── 4) 动态端口 + 托管型 provider 编排
-	alloc, err := orchestrator.NewPortAllocator(
-		config.DataPath(home, "ports.json"), cfg.Ports.Reuse, cfg.Ports.MaxRetry)
-	if err != nil {
-		abort(headless, lg, "端口分配器初始化失败", err)
-		return
-	}
-	orch := orchestrator.New(home, lg, alloc)
+	// ── 4) 托管型 provider 编排（进程内原生：无子进程、无端口分配器、无端口表）
+	orch := orchestrator.New(home, lg)
 	orch.StartAll(context.Background(), cfg.Managed)
-	_ = alloc.Save()
 
 	// ── 5) 渠道注册表
 	// 上游列表由 web 层按「配置 + 子进程实时状态」组装（见 web/upstreams.go），
@@ -129,7 +122,7 @@ func main() {
 		srv.OnQuit = func() { once.Do(func() { close(quit) }) }
 		lg.Info("已进入无界面模式", "panel", baseURL+"/", "api", baseURL+"/v1")
 		<-quit
-		shutdownServices(lg, orch, alloc, logDir, false)
+		shutdownServices(lg, orch, logDir, false)
 		return
 	}
 
@@ -189,7 +182,7 @@ func main() {
 	// ── 11) 有序退出（含释放 WebView2）
 	shell.Destroy()
 	lg.Info("WebView2 已释放")
-	shutdownServices(lg, orch, alloc, logDir, true)
+	shutdownServices(lg, orch, logDir, true)
 }
 
 // isHeadless 判断是否以无界面模式运行。
@@ -233,21 +226,16 @@ func handleTrayCommand(cmd int, lc *desktop.Lifecycle, getBase func() string, ho
 	}
 }
 
-// shutdownServices 回收托管进程、落盘端口映射、收尾日志。
+// shutdownServices 回收托管型 provider、收尾日志。
 //
 // withWindow=false 表示 WebView2 尚未创建（无界面模式），跳过其释放步骤。
 func shutdownServices(lg *logging.Logger, orch *orchestrator.Orchestrator,
-	alloc *orchestrator.PortAllocator, logDir string, withWindow bool) {
+	logDir string, withWindow bool) {
 
-	// 回收全部托管型 provider —— 先礼后兵，超时强杀，绝不留孤儿进程占端口
+	// 回收全部托管型 provider —— 停监听、drain 在途请求、上游落盘/关库
 	start := time.Now()
 	orch.Shutdown(context.Background(), 8*time.Second)
 	lg.Info("托管型 provider 已全部回收", "dur_ms", time.Since(start).Milliseconds())
-
-	// 状态落盘（端口映射；provider 自身状态由各自的 Flush 负责）
-	if err := alloc.Save(); err != nil {
-		lg.Warn("端口映射落盘失败", "err", err.Error())
-	}
 
 	lg.Info("Mergence 已退出", "log_dir", logDir, "with_window", withWindow)
 	_ = lg.Close()

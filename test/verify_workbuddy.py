@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""把真实的 WorkBuddy 网关（wb2api.exe）作为「托管型渠道」接入 Mergence，并验证。
+"""把真实的 WorkBuddy 上游作为「托管型渠道」接入 Mergence，并验证整条链路。
 
-这是把「P5 搬迁」换成「托管桥接」之后要做的那一次真机验证：
-不搬 wb2api 的源码，只把它当成一个独立进程接进路由，看整条链路能不能通。
+独立子进程模式已移除：WorkBuddy 现在是**进程内原生**渠道（内置实现由 kind
+选中，Mergence 自己装配上游 handler 并在本进程内起服务）。所以本脚本不再需要
+wb2api.exe，也不再写 command / args / dir / port_env_var。
+
+账号从原生实例自己的数据目录读取（<运行根>/data/instances/workbuddy/data/auths）。
+该目录为空时会明确「跳过」而不是报错——按迁移约定，账号不复制、由用户在控制台
+重新登录后才有。用 WB_DATA_DIR 可指向一个已有的原生实例数据目录。
 
 会用一次 max_tokens=1 的真实请求验证账号可用 —— 消耗可忽略，但会真实走上游。
+注意：本脚本会重写运行根里的真实配置（慎跑）。
 """
 import json
 import os
@@ -39,9 +45,12 @@ def real_home():
 HOME = real_home()
 CFG = os.path.join(HOME, "config", "mergence.json")
 
-WB_DIR = os.environ.get(
-    "WB_DIR", os.path.join(os.path.dirname(ROOT), "workbuddy2api-panel"))
-WB_EXE = os.path.join(WB_DIR, "wb2api.exe")
+# 原生 workbuddy 的数据目录：渠道未设 data_dir 时即
+# <运行根>/data/instances/<渠道名>/data（见 internal/config.DataDir 与
+# internal/native/workbuddy）。账号落在它下面的 auths/。
+WB_DATA = os.environ.get("WB_DATA_DIR") or os.path.join(
+    HOME, "data", "instances", "workbuddy", "data")
+WB_AUTHS = os.path.join(WB_DATA, "auths")
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -50,13 +59,11 @@ WB_PROVIDER = {
     "display_name": "WorkBuddy 账号",
     "enabled": True,
     "preset": "workbuddy",
-    "command": "wb2api.exe",
-    "args": [],
-    "dir": WB_DIR,
-    "port_env_var": "WB2A_LISTEN",
+    # 进程内原生：内置实现由 kind 选中；不再有可执行文件 / 命令行 / 工作目录 /
+    # 端口环境变量 / 就绪超时（那些字段连同端口分配器一起删掉了）。
+    "kind": "workbuddy",
+    "mode": "native",
     "health_path": "/healthz",
-    "ready_timeout": "60s",
-    "shutdown_grace": "8s",
     "panel_path": "/panel/",
     "route": {
         "model_prefix": "wb/",
@@ -69,11 +76,6 @@ WB_PROVIDER = {
         "priority": 0,
         "retries": 1,
         "timeout": "120s",
-    },
-    "env": {
-        # 账号目录沿用 wb2api 自己的（账号是用户资产，不该复制一份）；
-        # 但池状态另指一份，避免与单独运行的 wb2api 实例互相覆盖。
-        "WB2A_STATE_FILE": "./data/state.mergence.json",
     },
 }
 
@@ -103,15 +105,21 @@ def req(method, url, obj=None, timeout=30, raw=False):
 
 
 def main():
-    if not os.path.isfile(WB_EXE):
-        print("找不到 wb2api.exe：", WB_EXE)
-        return 1
-    print("wb2api.exe =", WB_EXE)
+    # 原生实例没有账号就跳过：独立子进程模式移除后，账号不再从 wb2api 目录读取，
+    # 按迁移约定由用户在控制台重新登录。这是预期状态，不是回归。
+    n_auth = len(os.listdir(WB_AUTHS)) if os.path.isdir(WB_AUTHS) else 0
+    if n_auth == 0:
+        print("跳过：原生 workbuddy 实例还没有账号 ——", WB_AUTHS)
+        print("      独立子进程模式已移除，账号不再从 wb2api 目录读取；")
+        print("      请先在 Mergence 面板的「控制台」里登录 WorkBuddy 账号，再跑本脚本。")
+        print("      （或用 WB_DATA_DIR 指向一个已有的原生实例数据目录。）")
+        return 0
+    print("原生 workbuddy 数据目录 =", WB_DATA, "，账号数 =", n_auth)
 
     cfg = json.load(open(CFG, encoding="utf-8"))
     cfg["managed_providers"] = [WB_PROVIDER]
     json.dump(cfg, open(CFG, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    print("已把 WorkBuddy 写入托管型渠道配置")
+    print("已把 WorkBuddy 写入托管型渠道配置（kind=workbuddy, mode=native）")
 
     log = os.path.join(HOME, "data", "logs", "mergence.log")
 
@@ -148,7 +156,7 @@ def main():
         assert ACCESS_KEY, "access_key 缺失"
         print("access_key 已取得（自动生成）")
 
-        # 等 WorkBuddy 子进程就绪
+        # 等原生 workbuddy 就绪
         chan, deadline = None, time.time() + 90
         while time.time() < deadline:
             st, d = req("GET", base + "/api/channels")
@@ -162,7 +170,7 @@ def main():
             return 1
         print("\n=== 渠道状态 ===")
         print("  来源:", chan.get("source"), " 就绪:", chan.get("ready"))
-        print("  子进程地址:", chan.get("base_url"))
+        print("  本地服务地址:", chan.get("base_url"))
         print("  自带面板:", chan.get("panel_url"))
         if not chan.get("ready"):
             print("  未就绪原因:", chan.get("ready_reason"))
@@ -189,7 +197,7 @@ def main():
             print("没有拉到任何 wb/ 模型 —— 账号可能未加载或上游目录为空")
             return 1
 
-        # 真实请求：max_tokens=1，验证整条链路（Mergence → wb2api → WorkBuddy）
+        # 真实请求：max_tokens=1，验证整条链路（Mergence → 原生 workbuddy → 上游）
         target = models[0]
         print(f"\n=== 真实调用（max_tokens=1）：{target} ===")
         st, d = req("POST", base + "/v1/chat/completions", {

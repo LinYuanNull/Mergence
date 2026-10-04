@@ -17,7 +17,8 @@ import (
 //
 // 覆盖四件容易回归的事：
 //  1. 目标前缀走契约表（/admin/api），而不是老配置里那个错值 /panel/api；
-//  2. 管理凭据来自 config.Claim.AdminKey，而不是渠道 route 的 api_key；
+//  2. 管理凭据 = 渠道 route key（独立子进程模式已移除，后台密码与路由密钥合并成一处），
+//     空 route key 回落契约默认值 `zcode`；
 //  3. 写操作（POST/PUT/DELETE）与方法、请求体一起透传，且 401 仍翻译成人话；
 //  4. 上游等待上限按方法/路径分档（领取最宽）。
 //
@@ -103,11 +104,12 @@ func zcodeManaged() config.ManagedProvider {
 	}
 }
 
-// 1 + 2：前缀走契约表；凭据用 Claim.AdminKey。
-func TestZcodePanelProxyUsesAdminAPIAndClaimKey(t *testing.T) {
+// 1 + 2：前缀走契约表；凭据用渠道 route key（= 后台密码）。
+func TestZcodePanelProxyUsesAdminAPIAndRouteKey(t *testing.T) {
 	fake := newFakeUpstream(t, http.StatusOK, `{"accounts":[]}`)
 
 	s, base := newTestServer(t, func(c *config.Config) {
+		// 设一个不同的后台密码：若 zcode 走错了凭据来源就会露馅。
 		c.Claim.AdminKey = "admin-secret"
 		c.Managed = append(c.Managed, zcodeManaged())
 	})
@@ -124,17 +126,19 @@ func TestZcodePanelProxyUsesAdminAPIAndClaimKey(t *testing.T) {
 	if got := fake.gotPath(); got != "/admin/api/accounts" {
 		t.Errorf("应打到契约表前缀 /admin/api/accounts，得到 %q（配置里写的是 /panel/api）", got)
 	}
-	if got := fake.gotAuth(); got != "Bearer admin-secret" {
-		t.Errorf("应注入 Claim.AdminKey，得到 %q", got)
+	if got := fake.gotAuth(); got != "Bearer route-key" {
+		t.Errorf("应注入渠道 route key（后台密码的唯一来源），得到 %q", got)
 	}
 }
 
-// 3：未配置后台密码时不发请求，直接 502 并给人话。
-func TestZcodePanelProxyMissingAdminKey(t *testing.T) {
+// 3：route key 留空时回落契约默认值 `zcode`，不拦请求。
+func TestZcodePanelProxyFallsBackToContractKey(t *testing.T) {
 	fake := newFakeUpstream(t, http.StatusOK, `{}`)
 
 	s, base := newTestServer(t, func(c *config.Config) {
-		c.Managed = append(c.Managed, zcodeManaged()) // 不设 AdminKey
+		m := zcodeManaged()
+		m.Route.APIKey = "" // 留空 → 回落契约默认值
+		c.Managed = append(c.Managed, m)
 	})
 	registerManagedAs(t, s, s.currentConfig().Managed[0], fake.srv.URL)
 
@@ -143,14 +147,14 @@ func TestZcodePanelProxyMissingAdminKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := readBody(t, resp)
-	if resp.StatusCode != http.StatusBadGateway {
-		t.Fatalf("未配密码应 502，得到 %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("留空 route key 应回落默认值并放行，得到 %d（body=%s）", resp.StatusCode, body)
 	}
-	if !strings.Contains(body, "未配置后台密码") {
-		t.Errorf("错误文案应含「未配置后台密码」，得到 %s", body)
+	if got := fake.gotAuth(); got != "Bearer zcode" {
+		t.Errorf("应注入契约默认值 zcode，得到 %q", got)
 	}
-	if n := fake.hits.Load(); n != 0 {
-		t.Errorf("未配密码时不应向上游发请求，实际发了 %d 次", n)
+	if n := fake.hits.Load(); n != 1 {
+		t.Errorf("应向上游发 1 次请求，实际 %d 次", n)
 	}
 }
 
@@ -159,8 +163,9 @@ func TestZcodePanelProxyTranslates401(t *testing.T) {
 	fake := newFakeUpstream(t, http.StatusUnauthorized, `{"detail":"unauthorized"}`)
 
 	s, base := newTestServer(t, func(c *config.Config) {
-		c.Claim.AdminKey = "wrong-key"
-		c.Managed = append(c.Managed, zcodeManaged())
+		m := zcodeManaged()
+		m.Route.APIKey = "wrong-key" // 错的 route key → 上游 401
+		c.Managed = append(c.Managed, m)
 	})
 	registerManagedAs(t, s, s.currentConfig().Managed[0], fake.srv.URL)
 
@@ -196,7 +201,6 @@ func TestZcodePanelProxyForwardsWrites(t *testing.T) {
 			fake := newFakeUpstream(t, http.StatusOK, `{"ok":true}`)
 
 			s, base := newTestServer(t, func(c *config.Config) {
-				c.Claim.AdminKey = "admin-secret"
 				c.Managed = append(c.Managed, zcodeManaged())
 			})
 			registerManagedAs(t, s, s.currentConfig().Managed[0], fake.srv.URL)
@@ -225,8 +229,8 @@ func TestZcodePanelProxyForwardsWrites(t *testing.T) {
 			if b := fake.gotBody(); b != tc.body {
 				t.Errorf("请求体应逐字节透传\n  want %s\n  got  %s", tc.body, b)
 			}
-			if a := fake.gotAuth(); a != "Bearer admin-secret" {
-				t.Errorf("写操作同样要注入 Claim.AdminKey，得到 %q", a)
+			if a := fake.gotAuth(); a != "Bearer route-key" {
+				t.Errorf("写操作同样要注入渠道 route key，得到 %q", a)
 			}
 		})
 	}
@@ -237,8 +241,9 @@ func TestZcodePanelProxyTranslates401OnWrite(t *testing.T) {
 	fake := newFakeUpstream(t, http.StatusUnauthorized, `{"detail":"unauthorized"}`)
 
 	s, base := newTestServer(t, func(c *config.Config) {
-		c.Claim.AdminKey = "wrong-key"
-		c.Managed = append(c.Managed, zcodeManaged())
+		m := zcodeManaged()
+		m.Route.APIKey = "wrong-key" // 错的 route key → 上游 401
+		c.Managed = append(c.Managed, m)
 	})
 	registerManagedAs(t, s, s.currentConfig().Managed[0], fake.srv.URL)
 
